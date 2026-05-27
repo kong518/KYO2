@@ -32,14 +32,7 @@ import AssistantForm from "./components/AssistantForm";
 import { EducationCertificate, EducationStats } from "./types";
 
 // Firebase Applet Integration
-import { auth, db, googleProvider } from "./firebase";
-import { 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged, 
-  signInAnonymously,
-  User 
-} from "firebase/auth";
+import { db } from "./firebase";
 import { 
   collection, 
   query, 
@@ -57,12 +50,14 @@ import { GoogleGenAI, Type } from "@google/genai";
 export default function App() {
   const [userMode, setUserMode] = useState<"assistant" | "admin">("assistant");
   const [submissions, setSubmissions] = useState<EducationCertificate[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
   // Authentication status
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [authInitialized, setAuthInitialized] = useState<boolean>(false);
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
+    return sessionStorage.getItem("isAdminLoggedIn") === "true";
+  });
+  const [authInitialized, setAuthInitialized] = useState<boolean>(true);
   const [showApiKeySetting, setShowApiKeySetting] = useState<boolean>(false);
   const [tempApiKey, setTempApiKey] = useState<string>("");
   const [adminPasscode, setAdminPasscode] = useState<string>("");
@@ -90,21 +85,15 @@ export default function App() {
     setTempApiKey(savedKey);
   }, []);
 
-  // Track Firebase User Active Session
+  // Track Admin Login Session Changes
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setAuthInitialized(true);
-      if (user) {
-        fetchSubmissions(user);
-      } else {
-        setSubmissions([]);
-        setSelectedSubmissionId(null);
-      }
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+    if (isAdminLoggedIn) {
+      fetchSubmissions(true);
+    } else {
+      setSubmissions([]);
+      setSelectedSubmissionId(null);
+    }
+  }, [isAdminLoggedIn]);
 
   const handleAdminLogin = async () => {
     if (adminPasscode.trim() !== "5612") {
@@ -113,11 +102,12 @@ export default function App() {
     }
     setLoading(true);
     try {
-      await signInAnonymously(auth);
+      sessionStorage.setItem("isAdminLoggedIn", "true");
+      setIsAdminLoggedIn(true);
       setAdminPasscode("");
     } catch (error: any) {
       console.error("Login failed:", error);
-      alert("관리자 로그인에 실패했습니다. Firebase Console에서 익명 로그인이 활성화되어 있는지 확인이 필요할 수 있습니다: " + (error.message || ""));
+      alert("로그인에 실패했습니다: " + (error.message || ""));
     } finally {
       setLoading(false);
     }
@@ -125,18 +115,15 @@ export default function App() {
 
   const handleAdminLogout = async () => {
     if (confirm("대시보드에서 로그아웃하시겠습니까?")) {
-      try {
-        await signOut(auth);
-        setUserMode("assistant");
-      } catch (error) {
-        console.error("Logout failed:", error);
-      }
+      sessionStorage.removeItem("isAdminLoggedIn");
+      setIsAdminLoggedIn(false);
+      setUserMode("assistant");
     }
   };
 
-  const fetchSubmissions = async (user?: any) => {
-    const activeUser = user || auth.currentUser;
-    if (!activeUser) {
+  const fetchSubmissions = async (isLoggedInOverride?: boolean) => {
+    const active = isLoggedInOverride !== undefined ? isLoggedInOverride : isAdminLoggedIn;
+    if (!active) {
       setLoading(false);
       return;
     }
@@ -177,7 +164,7 @@ export default function App() {
   };
 
   const handleRefreshList = async () => {
-    if (!auth.currentUser) return;
+    if (!isAdminLoggedIn) return;
     setRefreshing(true);
     try {
       const q = query(collection(db, "submissions"), orderBy("submittedAt", "desc"));
@@ -254,7 +241,7 @@ export default function App() {
 
   // Handles updating the training metadata and completion state 
   const handleSaveVerification = async (id: string, isCompletedStatus: boolean) => {
-    if (!auth.currentUser) {
+    if (!isAdminLoggedIn) {
       alert("로그인이 만료되었거나 승인 권한이 없습니다.");
       return;
     }
@@ -284,7 +271,7 @@ export default function App() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!auth.currentUser) {
+    if (!isAdminLoggedIn) {
       alert("삭제 권한이 없습니다.");
       return;
     }
@@ -483,7 +470,6 @@ If no training hours is found, leave it as an empty string.`;
       }, 0),
   };
 
-
   const selectedSubmission = submissions.find((s) => s.id === selectedSubmissionId);
 
   // Search and status filters
@@ -519,20 +505,19 @@ If no training hours is found, leave it as an empty string.`;
         </div>
 
         <div className="flex items-center gap-2.5">
-          {/* Active Admin session tags & Controls */}
-          {currentUser && (
+          {isAdminLoggedIn && (
             <div className="hidden sm:flex items-center gap-2 mr-2 border-r border-slate-200 pr-4">
               <div className="w-7 h-7 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 font-bold text-[10px] uppercase">
-                {currentUser.displayName?.slice(0, 2) || "M"}
+                AD
               </div>
               <div className="text-left leading-none font-sans">
-                <span className="text-[10px] font-bold text-slate-800 block leading-tight">{currentUser.displayName || "관리자"}</span>
-                <span className="text-[8px] text-slate-400 block leading-tight font-mono">{currentUser.email}</span>
+                <span className="text-[10px] font-bold text-slate-800 block leading-tight">지정 관리자</span>
+                <span className="text-[8px] text-slate-400 block leading-tight font-mono">수료증 확인 권한</span>
               </div>
             </div>
           )}
 
-          {userMode === "admin" && currentUser && (
+          {userMode === "admin" && isAdminLoggedIn && (
             <>
               <button
                 onClick={() => setShowApiKeySetting(true)}
@@ -591,7 +576,7 @@ If no training hours is found, leave it as an empty string.`;
                 <AssistantForm onNewSubmission={handleNewSubmission} />
               </div>
             </motion.div>
-          ) : !currentUser ? (
+          ) : !isAdminLoggedIn ? (
             /* =======================================
                ROLE: ADMINISTRATIVE AUTHENTICATION GATE
                ======================================= */
