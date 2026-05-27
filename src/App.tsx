@@ -685,12 +685,33 @@ If no training hours is found, leave it as an empty string.`;
                         alert("다운로드할 데이터가 없습니다.");
                         return;
                       }
-                      const csvContent = [
-                        ["제출ID", "성명", "생년월일", "이수확인여부", "인증된교육시간", "교육과정명", "제출시각", "참고사항"],
+                      const escapeCsv = (val: string) => {
+                        const str = String(val ?? "").replace(/"/g, '""');
+                        return str.includes(",") || str.includes("\n") || str.includes('"') ? `"${str}"` : str;
+                      };
+
+                      const totalCompleted = submissions.filter(s => s.isCompleted).length;
+                      const totalHoursSum = submissions
+                        .filter((s) => s.isCompleted && s.trainingHours)
+                        .reduce((sum, s) => {
+                          const num = parseFloat(s.trainingHours.replace(/[^0-9.]/g, ""));
+                          return isNaN(num) ? sum : sum + num;
+                        }, 0);
+
+                      const rows = [
+                        ["장애인활동지원 온라인 교육 수료대장 완료자 명단"],
+                        [`출력 일자: ${new Date().toLocaleDateString()}`, "수원시장애인종합복지관 (활동지원사업본부)"],
+                        [`총 완료 건수: ${totalCompleted}건`, `총 이수 누적시간: ${totalHoursSum}시간`],
+                        [], // Blank divider
+                        ["제출고유ID", "지원사 성명", "생년월일", "이수상태", "승인 교육시간(시간)", "이수 교육과정명", "제출 일시", "검토참고사항"],
                         ...submissions.map((s) => [
-                          s.id, s.assistantName, s.birthDate, s.isCompleted ? "이수완료" : "검토대기", s.trainingHours || "0", s.courseName || "확인중", s.submittedAt, s.managerNotes || ""
-                        ])
-                      ].map(e => e.join(",")).join("\n");
+                          s.id, s.assistantName, s.birthDate, s.isCompleted ? "이수완료" : "검토대기", s.trainingHours || "0", s.courseName || "미입력", s.submittedAt, s.managerNotes || ""
+                        ]),
+                        [], // Blank divider
+                        ["[합계 요약]", "이수완료 총 건수", `${totalCompleted}건`, "총 누적 교육시간", `${totalHoursSum}시간`, "수합 대장 원본 확인필", "", ""]
+                      ];
+
+                      const csvContent = rows.map(r => r.map(escapeCsv).join(",")).join("\n");
                       
                       const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
                       const url = URL.createObjectURL(blob);
@@ -1106,9 +1127,14 @@ If no training hours is found, leave it as an empty string.`;
                 <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 space-y-5" id="ledger-table-view">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
                     <div>
-                      <h3 className="text-sm font-bold text-slate-800 font-sans">장애인활동지원 온라인 교육 수료대장</h3>
-                      <p className="text-[11px] text-slate-400 mt-0.5 font-sans">
-                        검색 및 정렬 필터가 활성화된 대수 {filteredSubmissions.length}건이 리포트 테이블로 집계되었습니다.
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-bold text-slate-850 font-sans">장애인활동지원 온라인 교육 수료대장 완료자 명단</h3>
+                        <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 font-sans">
+                          총 인정 교육시간: <strong className="text-indigo-805">{stats.totalHours}시간</strong>
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1 font-sans">
+                        검색 및 정렬 필터 기준 총 {filteredSubmissions.length}건이 반영되었습니다. (전체 목록 총 누적 교육시간: {stats.totalHours}시간)
                       </p>
                     </div>
                     
@@ -1242,24 +1268,7 @@ If no training hours is found, leave it as an empty string.`;
                                     <Eye className="w-3 h-3" />
                                     <span>검토</span>
                                   </button>
-                                  {sub.isCompleted && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedSubmissionId(sub.id);
-                                        setCourseName(sub.courseName || "");
-                                        setTrainingHours(sub.trainingHours || "");
-                                        setManagerNotes(sub.managerNotes || "");
-                                        setTimeout(() => {
-                                          window.print();
-                                        }, 100);
-                                      }}
-                                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold rounded-lg text-[10px] cursor-pointer transition-all flex items-center gap-0.5"
-                                    >
-                                      <Printer className="w-3 h-3" />
-                                      <span>인쇄</span>
-                                    </button>
-                                  )}
+                                  {/* No individual certificate print needed */}
                                 </div>
                               </td>
                             </tr>
@@ -1419,118 +1428,110 @@ If no training hours is found, leave it as an empty string.`;
           PRINTER PRINTING SHEET (HIDDEN ON SCREEN, ONLY FOR PRINT)
           ────────────────────────────────────────────── */}
       <div className="hidden print:block font-sans min-h-screen text-slate-900 bg-white" id="printing-sheet">
-        
-        {/* CASE A: Ledger table print (If view mode is list) */}
-        {adminViewMode === "list" && (
-          <div className="p-8 w-full block">
-            <h1 className="text-xl font-bold text-center mb-1 text-slate-900 font-sans tracking-tight">장애인활동지원 온라인 교육 수료대장 완료자 명단</h1>
-            <p className="text-center text-[10px] text-slate-500 mb-6 font-mono">출력 일자: {new Date().toLocaleDateString()} / 수원시장애인종합복지관 (활동지원사업본부)</p>
-            
-            <table className="w-full text-xs border-collapse border border-slate-300">
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-300 text-[10px] font-bold text-slate-700">
-                  <th className="border border-slate-300 px-2 py-1.5 text-center w-12">No</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-left w-24">지원사 성명</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-center w-24">생년월일</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-left">이수 교육과정명</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-center w-20">인정 시간</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-center w-24">제출 일자</th>
-                  <th className="border border-slate-300 px-3 py-1.5 text-left w-40">비고 및 확인자 검토사항</th>
+        <div className="p-8 w-full block">
+          {/* Header section designed beautifully for printed reports */}
+          <div className="text-center pb-6 border-b-2 border-slate-850 mb-6">
+            <h1 className="text-2xl font-bold tracking-tight font-sans text-slate-900">장애인활동지원 온라인 교육 수료대장</h1>
+            <p className="text-[10px] text-slate-500 mt-1 font-mono">수원시장애인종합복지관 (활동지원사업본부) | 출력 일자: {new Date().toLocaleDateString()}</p>
+          </div>
+          
+          {/* Aggregate summary fact blocks printed neat and clean */}
+          <div className="grid grid-cols-3 gap-4 border border-slate-350 bg-slate-50 p-4 rounded-lg mb-6 text-xs font-sans">
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">대장 집계 범위</p>
+              <p className="font-extrabold text-slate-800 text-sm">
+                {subFilter === "all" ? "전체 등록자" : subFilter === "completed" ? "이수완료자 명단" : "검토대기자 명단"}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">총 인원 집계</p>
+              <p className="font-extrabold text-slate-850 text-sm">{filteredSubmissions.length} 명</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">총 누적 인정시간</p>
+              <p className="font-extrabold text-indigo-700 text-sm">
+                {filteredSubmissions
+                  .filter((s) => s.isCompleted && s.trainingHours)
+                  .reduce((sum, s) => {
+                    const num = parseFloat(s.trainingHours.replace(/[^0-9.]/g, ""));
+                    return isNaN(num) ? sum : sum + num;
+                  }, 0)} 시간
+              </p>
+            </div>
+          </div>
+          
+          {/* Elegant printable data table */}
+          <table className="w-full text-xs border-collapse border border-slate-350">
+            <thead>
+              <tr className="bg-slate-100 border-b border-slate-350 text-[10px] font-bold text-slate-800 tracking-wide uppercase">
+                <th className="border border-slate-350 px-2.5 py-2 text-center w-12">No</th>
+                <th className="border border-slate-350 px-3.5 py-2 text-left w-28">지원사 성명</th>
+                <th className="border border-slate-300/90 px-3.5 py-2 text-center w-28">생년월일</th>
+                <th className="border border-slate-350 px-3.5 py-2 text-left">이수 교육과정명</th>
+                <th className="border border-slate-350 px-3 py-2 text-center w-24">인정 시간</th>
+                <th className="border border-slate-350 px-3 py-2 text-center w-28">제출(수합)일자</th>
+                <th className="border border-slate-350 px-3.5 py-2 text-left w-48">비고 및 확인자 메모</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSubmissions.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="border border-slate-350 px-3 py-16 text-center text-slate-400 font-sans">
+                    출력할 수 있는 내역이 없습니다.
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {filteredSubmissions.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="border border-slate-300 px-3 py-8 text-center text-slate-400 font-sans">
-                      수료 대장 리스트 데이터가 존재하지 않습니다.
+              ) : (
+                <>
+                  {filteredSubmissions.map((sub, index) => (
+                    <tr key={sub.id} className="text-[11px] font-sans hover:bg-slate-50/20 animate-none">
+                      <td className="border border-slate-350 px-2.5 py-1.5 text-center font-mono text-slate-500">{index + 1}</td>
+                      <td className="border border-slate-350 px-3.5 py-1.5 font-bold text-slate-900 text-[11.5px]">{sub.assistantName}</td>
+                      <td className="border border-slate-350 px-3.5 py-1.5 text-center font-mono text-slate-600">{sub.birthDate}</td>
+                      <td className="border border-slate-350 px-3.5 py-1.5 text-slate-800 font-medium">{sub.courseName || "확인중"}</td>
+                      <td className="border border-slate-350 px-3 py-1.5 text-center font-mono font-bold text-slate-850">
+                        {sub.trainingHours ? `${sub.trainingHours}시간` : "-"}
+                      </td>
+                      <td className="border border-slate-350 px-3 py-1.5 text-center font-mono text-slate-500">
+                        {sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : "-"}
+                      </td>
+                      <td className="border border-slate-350 px-3.5 py-1.5 text-slate-500">
+                        {sub.isCompleted ? (
+                          sub.managerNotes || "이수 확인완료"
+                        ) : (
+                          <span className="text-amber-700 font-semibold">[검토대기] {sub.managerNotes || "-"}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  
+                  {/* Ledger summary totals row */}
+                  <tr className="bg-slate-50 font-bold text-xs">
+                    <td colSpan={4} className="border border-slate-350 px-3.5 py-2.5 text-center text-slate-700">
+                      합계 (이수완료 전체 누적 교육시간)
+                    </td>
+                    <td className="border border-slate-350 px-3 py-2.5 text-center text-indigo-700 font-extrabold text-sm font-mono">
+                      {filteredSubmissions
+                        .filter((s) => s.isCompleted && s.trainingHours)
+                        .reduce((sum, s) => {
+                          const num = parseFloat(s.trainingHours.replace(/[^0-9.]/g, ""));
+                          return isNaN(num) ? sum : sum + num;
+                        }, 0)}시간
+                    </td>
+                    <td colSpan={2} className="border border-slate-350 px-3.5 py-2.5 text-right text-slate-600 font-sans">
+                      완료 {filteredSubmissions.filter(s => s.isCompleted).length}건 / 대기 {filteredSubmissions.filter(s => !s.isCompleted).length}건
                     </td>
                   </tr>
-                ) : (
-                  filteredSubmissions.map((sub, index) => (
-                    <tr key={sub.id} className="text-[10px] font-sans">
-                      <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{index + 1}</td>
-                      <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-900">{sub.assistantName}</td>
-                      <td className="border border-slate-300 px-3 py-1.5 text-center font-mono text-slate-600">{sub.birthDate}</td>
-                      <td className="border border-slate-300 px-3 py-1.5 text-slate-850 font-bold">{sub.courseName || "보수교육"}</td>
-                      <td className="border border-slate-300 px-3 py-1.5 text-center font-mono font-bold">{sub.trainingHours ? `${sub.trainingHours}시간` : "-"}</td>
-                      <td className="border border-slate-300 px-3 py-1.5 text-center font-mono text-slate-500">{sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : "-"}</td>
-                      <td className="border border-slate-300 px-3 py-1.5 text-slate-500">{sub.managerNotes || "-"}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            
-            <div className="mt-8 flex justify-between text-[11px] font-semibold text-slate-700 px-2 font-sans">
-              <span>총 누적 건수: {filteredSubmissions.length} 건</span>
-              <span>수합 대장 원본 확인필 (서명) __________________</span>
-            </div>
+                </>
+              )}
+            </tbody>
+          </table>
+          
+          {/* Signatures part */}
+          <div className="mt-12 flex justify-between items-center text-xs font-semibold text-slate-700 px-2 font-sans border-t border-slate-200 pt-6">
+            <span>수원시장애인종합복지관 - 교육 수집 및 검토 대장 명단</span>
+            <span className="text-right">수합 대장 원본 확인필 (서명) : ________________________</span>
           </div>
-        )}
-
-        {/* CASE B: Individual Certificate Confirmation print */}
-        {selectedSubmission && (
-          <div className="p-12 w-[650px] mx-auto border-8 border-indigo-950/80 my-12 bg-white text-center flex flex-col justify-between min-h-[85vh] relative" id="individual-certificate-frame">
-            {/* Watermark circle representation */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.05] pointer-events-none">
-              <Award className="w-[280px] h-[280px] text-slate-900" />
-            </div>
-
-            <div className="space-y-8">
-              <div className="space-y-2">
-                <span className="text-[11px] font-mono tracking-widest text-indigo-800 uppercase block font-semibold">장애인활동지원 온라인 교육 수료증</span>
-                <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight font-sans underline underline-offset-8">교 육 이 수 확 인 서</h1>
-                <span className="text-[9px] font-mono text-slate-400 block pt-1.5">제출 고유번호: No. {selectedSubmission.id.toUpperCase()}</span>
-              </div>
-
-              {/* Recipient meta table inside individual print */}
-              <div className="my-10 border-t-2 border-b-2 border-slate-800 py-6 max-w-md mx-auto text-left space-y-4 font-sans text-sm">
-                <div className="flex">
-                  <span className="w-24 text-slate-500 font-bold block">이 수 자 성 명</span>
-                  <span className="flex-1 font-extrabold text-slate-900 border-b border-slate-200 pb-1 text-base">{selectedSubmission.assistantName}</span>
-                </div>
-                <div className="flex">
-                  <span className="w-24 text-slate-500 font-bold block">생 년 월 일</span>
-                  <span className="flex-1 font-bold text-slate-800 border-b border-slate-200 pb-1 font-mono">
-                    {selectedSubmission.birthDate.slice(0, 2)}년 {selectedSubmission.birthDate.slice(2, 4)}월 {selectedSubmission.birthDate.slice(4, 6)}일생
-                  </span>
-                </div>
-                <div className="flex">
-                  <span className="w-24 text-slate-500 font-bold block">이 수 과 정 명</span>
-                  <span className="flex-1 font-bold text-indigo-950/90 border-b border-slate-200 pb-1 text-sm">{selectedSubmission.courseName || "장애인활동지원 정기 보수교육 과정"}</span>
-                </div>
-                <div className="flex">
-                  <span className="w-24 text-slate-500 font-bold block">인정 교육시간</span>
-                  <span className="flex-1 font-extrabold text-slate-900 border-b border-slate-200 pb-1 font-mono text-lg">{selectedSubmission.trainingHours || "0"} 시간</span>
-                </div>
-                <div className="flex">
-                  <span className="w-24 text-slate-500 font-bold block">수 료 일 자</span>
-                  <span className="flex-1 font-bold text-slate-700 border-b border-slate-200 pb-1">{new Date(selectedSubmission.submittedAt).toLocaleDateString()} (제출 수합)</span>
-                </div>
-              </div>
-
-              {/* Swear context */}
-              <div className="px-6 py-6 text-[13px] text-slate-700 leading-relaxed font-sans max-w-lg mx-auto whitespace-pre-wrap font-bold">
-                {"위 활동지원사는 관련 교육 훈련 요강에 의거하여\n본 수료 교육과정을 성실히 수강하고 검토 기준에 상응하는 교육 이수를 성료하였음을 이에 공식 증명합니다."}
-              </div>
-            </div>
-
-            <div className="pt-10 space-y-4">
-              <p className="text-sm font-bold text-slate-800 leading-relaxed font-mono">
-                {new Date().toLocaleDateString()}
-              </p>
-              
-              <div className="flex justify-center items-center gap-2 mt-2">
-                <span className="text-lg font-extrabold text-slate-950 font-sans tracking-wide">수원시장애인종합복지관 귀하</span>
-                <span className="w-12 h-12 rounded-full border-4 border-rose-650 rotate-6 border-rose-600/70 text-[9px] font-extrabold text-rose-600/90 flex items-center justify-center flex-col uppercase select-none leading-none border-double font-serif scale-95 shrink-0">
-                  <span>복지관</span>
-                  <span>직인생략</span>
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
+        </div>
       </div>
     </div>
   );
