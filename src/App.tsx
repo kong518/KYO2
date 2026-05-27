@@ -37,6 +37,7 @@ import {
   signInWithPopup, 
   signOut, 
   onAuthStateChanged, 
+  signInAnonymously,
   User 
 } from "firebase/auth";
 import { 
@@ -64,6 +65,7 @@ export default function App() {
   const [authInitialized, setAuthInitialized] = useState<boolean>(false);
   const [showApiKeySetting, setShowApiKeySetting] = useState<boolean>(false);
   const [tempApiKey, setTempApiKey] = useState<string>("");
+  const [adminPasscode, setAdminPasscode] = useState<string>("");
 
   // Administrative Control States
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
@@ -105,12 +107,17 @@ export default function App() {
   }, []);
 
   const handleAdminLogin = async () => {
+    if (adminPasscode.trim() !== "5612") {
+      alert("올바르지 않은 관리자 비밀번호입니다.");
+      return;
+    }
     setLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      await signInAnonymously(auth);
+      setAdminPasscode("");
     } catch (error: any) {
       console.error("Login failed:", error);
-      alert("로그인에 실패했습니다: " + (error.message || ""));
+      alert("관리자 로그인에 실패했습니다. Firebase Console에서 익명 로그인이 활성화되어 있는지 확인이 필요할 수 있습니다: " + (error.message || ""));
     } finally {
       setLoading(false);
     }
@@ -606,18 +613,34 @@ If no training hours is found, leave it as an empty string.`;
                   <h3 className="text-base font-bold text-slate-950">관리자 계정 인증</h3>
                   <p className="text-slate-500 text-xs leading-relaxed font-medium">
                     장애인활동지원 수료대장 확인 및 교육시간 승인을<br />
-                    진행하시려면 구글 계정으로 로그인해 주시기 바랍니다.
+                    진행하시려면 지정된 관리자 비밀번호를 입력해 주시기 바랍니다.
                   </p>
                 </div>
 
-                <button
-                  onClick={handleAdminLogin}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-605 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
-                >
-                  <Users className="w-4 h-4" />
-                  {loading ? "로그인 시도 중..." : "구글 계정으로 로그인 (인증 및 입장)"}
-                </button>
+                <div className="space-y-3">
+                  <input
+                    type="password"
+                    maxLength={10}
+                    value={adminPasscode}
+                    onChange={(e) => setAdminPasscode(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleAdminLogin();
+                      }
+                    }}
+                    placeholder="비밀번호 입력"
+                    className="w-full text-center tracking-[0.5em] px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-lg font-bold focus:outline-none focus:border-indigo-500 focus:bg-white transition-all placeholder:tracking-normal placeholder:font-normal placeholder:text-sm"
+                  />
+                  
+                  <button
+                    onClick={handleAdminLogin}
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                  >
+                    <UserCheck className="w-4 h-4" />
+                    {loading ? "인증 확인 중..." : "인증 및 대시보드 입장"}
+                  </button>
+                </div>
 
                 <button
                   onClick={() => setUserMode("assistant")}
