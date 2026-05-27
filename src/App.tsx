@@ -255,11 +255,12 @@ export default function App() {
     }
     setActionLoading(true);
     try {
+      const currentSub = submissions.find((item) => item.id === id);
       const docRef = doc(db, "submissions", id);
       const updateData = {
         isCompleted: isCompletedStatus,
-        trainingHours,
-        courseName,
+        trainingHours: trainingHours || currentSub?.trainingHours || "",
+        courseName: courseName || currentSub?.courseName || "",
         managerNotes,
         reviewedAt: new Date().toISOString(),
       };
@@ -1001,87 +1002,31 @@ If no training hours is found, leave it as an empty string.`;
                         <div className="space-y-4" id="inspector-interactive-inputs">
                           <div>
                             <div className="flex items-center justify-between mb-1.5">
-                              <span className="block text-[10px] text-slate-400 font-extrabold uppercase tracking-wide">활동지원사 전송 데이터 (수료증 대비)</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCourseName(selectedSubmission.courseName || "");
-                                  setTrainingHours(selectedSubmission.trainingHours || "");
-                                  setAiFeedback(null);
-                                }}
-                                className="text-[10.5px] font-bold text-indigo-600 hover:text-indigo-850 flex items-center gap-1 cursor-pointer bg-indigo-50 hover:bg-indigo-100/80 px-2.5 py-1 rounded-lg border border-indigo-100 transition-all shadow-xs"
-                                title="활동지원사가 최초로 작성하여 제출한 교육과정명과 교육시간 정보로 아래 관리자 입력란을 채웁니다."
-                              >
-                                📋 제출 값 복사 적용
-                              </button>
+                              <span className="block text-[10px] text-indigo-650 font-extrabold uppercase tracking-wide">활동지원사 전송 데이터 (수료증 분석 대치 검토)</span>
                             </div>
-                            <div className="p-3.5 bg-slate-50 border border-slate-205/85 rounded-xl space-y-2.5 text-xs font-medium">
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="bg-white/80 p-2 rounded-lg border border-slate-100">
+                            <div className="p-4 bg-indigo-50/30 border border-slate-200/80 rounded-xl space-y-3 text-xs font-medium shadow-xs">
+                              <div className="grid grid-cols-2 gap-2.5">
+                                <div className="bg-white p-2.5 rounded-lg border border-slate-200/60 shadow-xs">
                                   <span className="text-slate-400 text-[9px] font-bold block">성명</span>
-                                  <p className="text-slate-800 text-xs font-bold mt-0.5">{selectedSubmission.assistantName}</p>
+                                  <p className="text-slate-800 text-xs font-extrabold mt-0.5">{selectedSubmission.assistantName}</p>
                                 </div>
-                                <div className="bg-white/80 p-2 rounded-lg border border-slate-100">
+                                <div className="bg-white p-2.5 rounded-lg border border-slate-200/60 shadow-xs">
                                   <span className="text-slate-400 text-[9px] font-bold block">생년월일(6자리)</span>
-                                  <p className="text-slate-800 text-xs font-mono font-bold mt-0.5">{selectedSubmission.birthDate}</p>
+                                  <p className="text-slate-805 text-xs font-mono font-extrabold text-slate-800 mt-0.5">{selectedSubmission.birthDate}</p>
                                 </div>
                               </div>
-                              <div className="bg-white/80 p-2 rounded-lg border border-slate-100">
+                              <div className="bg-white p-2.5 rounded-lg border border-slate-200/60 shadow-xs">
                                 <span className="text-slate-400 text-[9px] font-bold block">제출 교육과정명</span>
                                 <p className="text-slate-800 text-[11px] font-semibold mt-0.5 leading-normal break-all">
                                   {selectedSubmission.courseName || <span className="text-slate-300 italic font-normal">미작성 제출</span>}
                                 </p>
                               </div>
-                              <div className="bg-white/80 p-2 rounded-lg border border-slate-100">
+                              <div className="bg-white p-2.5 rounded-lg border border-slate-200/60 shadow-xs">
                                 <span className="text-slate-400 text-[9px] font-bold block">제출 수강 인정 시간</span>
-                                <p className="text-slate-800 text-[11px] font-mono font-bold mt-0.5 text-indigo-600">
+                                <p className="text-indigo-600 text-[11px] font-mono font-bold mt-0.5">
                                   {selectedSubmission.trainingHours ? (selectedSubmission.trainingHours.includes("시간") ? selectedSubmission.trainingHours : `${selectedSubmission.trainingHours}시간`) : <span className="text-slate-300 italic font-normal">미작성 제출</span>}
                                 </p>
                               </div>
-                            </div>
-                          </div>
-
-                          {/* Editable fields */}
-                          <div className="space-y-3.5 border-t border-slate-100 pt-3.5" id="verifying-editable-inputs">
-                            <div>
-                              <div className="flex justify-between items-center mb-1">
-                                <label className="block text-xs font-bold text-slate-700">
-                                  최종 인정 교육과정명 <span className="text-indigo-600">*</span>
-                                </label>
-                                <span className="text-[10px] text-slate-404 text-slate-500 font-medium">
-                                  제출: <strong className="text-indigo-600 font-bold">{selectedSubmission.courseName || "미입력"}</strong>
-                                </span>
-                              </div>
-                              <input
-                                id="admin-course-name"
-                                type="text"
-                                value={courseName || ""}
-                                onChange={(e) => setCourseName(e.target.value)}
-                                placeholder="예: 발달장애인 지원사 보수교육 과정"
-                                className="w-full px-3 py-2 border border-slate-200 bg-slate-50/20 rounded-xl text-xs font-semibold focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-550 transition-colors"
-                              />
-                            </div>
-
-                            <div>
-                              <div className="flex justify-between items-center mb-1">
-                                <label className="block text-xs font-bold text-slate-700">
-                                  최종 인정 시간 (숫자) <span className="text-indigo-600">*</span>
-                                </label>
-                                <span className="text-[10px] text-slate-404 text-slate-500 font-medium font-mono">
-                                  제출: <strong className="text-indigo-600 font-bold">{selectedSubmission.trainingHours ? (selectedSubmission.trainingHours.includes("시간") ? selectedSubmission.trainingHours : `${selectedSubmission.trainingHours}시간`) : "미입력"}</strong>
-                                </span>
-                              </div>
-                              <input
-                                id="admin-training-hours"
-                                type="text"
-                                value={trainingHours || ""}
-                                onChange={(e) => setTrainingHours(e.target.value)}
-                                placeholder="인정 교육 시간 수 기입 (예: 4)"
-                                className="w-full px-3 py-2 border border-slate-200 bg-slate-50/20 rounded-xl text-xs font-mono font-semibold focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-555 transition-colors"
-                              />
-                              <p className="text-[9.5px] text-slate-400 mt-1 leading-normal">
-                                활동지원사가 기재하여 신청한 교육 시간이 타당한지 수료증 이미지와 비교 후 알맞은 시간을 입력해 주십시오. (제출값 복사 시 자동 완성됩니다)
-                              </p>
                             </div>
                           </div>
                         </div>
