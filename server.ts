@@ -225,6 +225,18 @@ If no training hours is found, leave it as an empty string.`;
     res.json(parsedData);
   } catch (error: any) {
     console.error("Gemini OCR Error:", error);
+    const errMsg = error.message || "";
+    if (
+      errMsg.includes("API key expired") || 
+      errMsg.includes("API_KEY_INVALID") || 
+      errMsg.includes("INVALID_ARGUMENT") || 
+      errMsg.includes("key expired") ||
+      errMsg.includes("400")
+    ) {
+      return res.status(400).json({
+        error: "사용 승인된 Gemini API Key가 만료되었거나 발급 상태가 올바르지 않습니다.\n\n우측 상단의 [⚙️ Settings] 버튼 -> API Keys 탭에서 유효한 Gemini API Key를 등록 및 저장한 후 다시 시도해 주시기 바랍니다."
+      });
+    }
     res.status(500).json({ error: "교육 수료증 정보 분석에 실패하였습니다: " + error.message });
   }
 });

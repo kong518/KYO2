@@ -47,6 +47,10 @@ export default function App() {
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
 
+  // AI OCR States
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState<boolean>(false);
+  const [aiFeedback, setAiFeedback] = useState<{ type: "success" | "error" | "mismatch"; message: string } | null>(null);
+
   useEffect(() => {
     fetchSubmissions();
   }, []);
@@ -200,6 +204,85 @@ export default function App() {
     setCourseName(sub.courseName || "");
     setTrainingHours(sub.trainingHours || "");
     setManagerNotes(sub.managerNotes || "");
+    setAiFeedback(null);
+  };
+
+  const handleAiOcrAnalysis = async (imgBase64: string, subName: string, subBirth: string) => {
+    if (!imgBase64) {
+      setAiFeedback({ type: "error", message: "수료증 원본 이미지가 등록되어 있지 않습니다." });
+      return;
+    }
+    setAiAnalysisLoading(true);
+    setAiFeedback(null);
+    try {
+      const response = await fetch("/api/submissions/ocr", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ imageBase64: imgBase64 }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const extractedCourse = data.courseName || "";
+        const extractedHours = data.trainingHours || "";
+        const extractedName = data.assistantName || "";
+        const extractedBirth = data.birthDate || "";
+
+        setCourseName(extractedCourse);
+        
+        let normalizedHours = extractedHours;
+        const matchedNum = extractedHours.replace(/[^0-9.]/g, "");
+        if (matchedNum && !isNaN(parseFloat(matchedNum))) {
+          normalizedHours = matchedNum;
+        }
+        setTrainingHours(normalizedHours);
+
+        const cleanNameSub = subName.replace(/\s+/g, "");
+        const cleanNameExt = extractedName.replace(/\s+/g, "");
+        
+        const cleanBirthSub = subBirth.replace(/[^0-9]/g, "");
+        const cleanBirthExt = extractedBirth.replace(/[^0-9]/g, "");
+        
+        const isNameMismatch = cleanNameSub && cleanNameExt && !cleanNameSub.includes(cleanNameExt) && !cleanNameExt.includes(cleanNameSub);
+        const isBirthMismatch = cleanBirthSub && cleanBirthExt && cleanBirthSub !== cleanBirthExt;
+
+        if (isNameMismatch || isBirthMismatch) {
+          let mismatchDetail = "⚠️ 제출 정보와 수료증 분석 정보가 일치하지 않습니다:\n";
+          if (isNameMismatch) {
+            mismatchDetail += `• 제출 성명: ${subName} ↔ AI 분석: ${extractedName}\n`;
+          }
+          if (isBirthMismatch) {
+            mismatchDetail += `• 제출 생년월일: ${subBirth} ↔ AI 분석: ${extractedBirth}\n`;
+          }
+          mismatchDetail += "\n정확한 서류 수료 대상인지 확인 후 시간 승인을 진행해 주십시오.";
+          setAiFeedback({
+            type: "mismatch",
+            message: mismatchDetail,
+          });
+        } else {
+          setAiFeedback({
+            type: "success",
+            message: `✨ AI 분석 완료: 과정명과 이수시간을 자동으로 입력했습니다. (수료증 정보: ${extractedName || "성명미상"}, ${extractedBirth || "생년월일미상"})`,
+          });
+        }
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        setAiFeedback({
+          type: "error",
+          message: errData.error || `서버 분석 실패 (상태 코드: ${response.status})`
+        });
+      }
+    } catch (error: any) {
+      console.error("AI Analysis error:", error);
+      setAiFeedback({
+        type: "error",
+        message: "분석 서버 또는 네트워크 연결 오류가 발생했습니다: " + (error.message || "")
+      });
+    } finally {
+      setAiAnalysisLoading(false);
+    }
   };
 
   // Stats Calculations for verifying completion & total training hours
@@ -574,6 +657,55 @@ export default function App() {
                                 <p className="text-slate-800 text-sm font-mono font-semibold">{selectedSubmission.birthDate}</p>
                               </div>
                             </div>
+                          </div>
+
+                          {/* AI 수료 자동 추출 서비스 */}
+                          <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2.5" id="ai-extractor-panel">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-indigo-700 font-bold flex items-center gap-1">
+                                <Sparkles className="w-3 h-3 text-indigo-500" />
+                                AI 수료 정보 추출 및 인적 불일치 검증
+                              </span>
+                            </div>
+                            <button
+                              id="btn-ai-analyze"
+                              type="button"
+                              onClick={() => handleAiOcrAnalysis(
+                                selectedSubmission.certificateImage,
+                                selectedSubmission.assistantName,
+                                selectedSubmission.birthDate
+                              )}
+                              disabled={aiAnalysisLoading || !selectedSubmission.certificateImage}
+                              className={`w-full flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                                aiAnalysisLoading
+                                  ? "bg-indigo-100 text-indigo-400"
+                                  : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs"
+                              }`}
+                            >
+                              {aiAnalysisLoading ? (
+                                <>
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  <span>AI가 수료증 분석 중...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <span>AI 수료증 분석 및 자동 입력</span>
+                                </>
+                              )}
+                            </button>
+                            
+                            {aiFeedback && (
+                              <div className={`p-2.5 rounded-lg text-[11px] whitespace-pre-line font-medium leading-relaxed ${
+                                aiFeedback.type === "success"
+                                  ? "bg-emerald-50 text-emerald-800 border border-emerald-100"
+                                  : aiFeedback.type === "mismatch"
+                                  ? "bg-amber-50 text-amber-800 border border-amber-200"
+                                  : "bg-rose-50 text-rose-800 border border-rose-100"
+                              }`}>
+                                {aiFeedback.message}
+                              </div>
+                            )}
                           </div>
 
                           {/* Editable fields */}
