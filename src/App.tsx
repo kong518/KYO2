@@ -97,6 +97,19 @@ export default function App() {
     }
   }, [isAdminLoggedIn]);
 
+  // Sync admin input states when selecting a different submission
+  useEffect(() => {
+    if (selectedSubmission) {
+      setCourseName(selectedSubmission.courseName || "");
+      setTrainingHours(selectedSubmission.trainingHours || "");
+      setManagerNotes(selectedSubmission.managerNotes || "");
+    } else {
+      setCourseName("");
+      setTrainingHours("");
+      setManagerNotes("");
+    }
+  }, [selectedSubmissionId]);
+
   const handleAdminLogin = async () => {
     if (adminPasscode.trim() !== "5612") {
       alert("올바르지 않은 관리자 비밀번호입니다.");
@@ -233,9 +246,6 @@ export default function App() {
       
       // Auto-focus selected
       setSelectedSubmissionId(docSnap.id);
-      setCourseName("");
-      setTrainingHours("");
-      setManagerNotes("");
       
       return { success: true };
     } catch (error: any) {
@@ -887,40 +897,7 @@ If no training hours is found, leave it as an empty string.`;
                         placeholder="이름, 생년월일 또는 교육과정명 검색..."
                         className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/20 focus:bg-white focus:outline-none transition-colors"
                       />
-                    </div>
-                  </div>
-
-                  {/* Dynamic Records scroll region */}
-                  <div className="flex-1 max-h-[500px] overflow-y-auto divide-y divide-slate-100 pr-1.5" id="submissions-records-scroll">
-                    {loading ? (
-                      <div className="text-center py-10 font-medium text-slate-400 text-xs">기록을 불러오는 중입니다...</div>
-                    ) : filteredSubmissions.length === 0 ? (
-                      <div className="text-center py-16 text-slate-400 text-xs font-semibold bg-slate-50 border border-slate-100 rounded-xl">
-                        조건에 일치하는 내역이 존재하지 않습니다.
-                      </div>
-                    ) : (
-                      filteredSubmissions.map((sub) => {
-                        const isSelected = sub.id === selectedSubmissionId;
-                        return (
-                          <div
-                            key={sub.id}
-                            id={`submission-item-${sub.id}`}
-                            onClick={() => handleSelectItem(sub)}
-                            className={`p-3 my-1.5 cursor-pointer transition-all border flex items-center justify-between rounded-xl ${
-                              isSelected
-                                ? "bg-indigo-50/50 border-indigo-200 ring-2 ring-indigo-50/30"
-                                : "bg-white border-transparent hover:bg-slate-50"
-                            }`}
-                          >
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-sm text-slate-800">{sub.assistantName}</span>
-                                <span className="text-[10px] font-medium text-slate-400">{sub.birthDate}</span>
-                              </div>
-                              <p className="text-xs text-slate-500 truncate max-w-[200px]">
-                                {sub.courseName || <em className="text-slate-400 font-normal">과정명 미지정</em>}
-                              </p>
-                              <div className="flex items-center gap-3 text-[10px] text-slate-400">
+                                                  <div className="flex items-center gap-3 text-[10px] text-slate-400">
                                 <span>시간: {sub.trainingHours || "미입력"}</span>
                                 <span>제출: {new Date(sub.submittedAt).toLocaleDateString()}</span>
                               </div>
@@ -952,6 +929,7 @@ If no training hours is found, leave it as an empty string.`;
                         <div>
                           <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">제출물 검증</span>
                           <h4 className="text-sm font-semibold text-slate-800">교육 세부 수료 사항 검토</h4>
+                          <p className="text-[11px] text-slate-400 mt-0.5">활동지원사가 제출한 필수 정보입니다. 서류 확인 후 수정하여 최종 승인 가능합니다.</p>
                         </div>
                         <div className="text-right">
                           <span className="text-[10px] font-mono text-slate-400 block">ID: {selectedSubmission.id}</span>
@@ -962,10 +940,10 @@ If no training hours is found, leave it as an empty string.`;
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="inspector-split">
                         
                         {/* Certificate picture zoom/visualizer */}
-                        <div className="space-y-2" id="inspector-cert-image-preview">
+                        <div className="space-y-4" id="inspector-cert-image-preview">
                           <span className="block text-xs font-semibold text-slate-500">활동지원사 송부 수료 문서</span>
                           
-                          <div className="bg-slate-50 border border-slate-200/80 p-2.5 relative flex flex-col items-center justify-center min-h-[225px] overflow-hidden rounded-xl bg-slate-50">
+                          <div className="bg-slate-50 border border-slate-200/80 p-2.5 relative flex flex-col items-center justify-center min-h-[240px] overflow-hidden rounded-xl bg-slate-50">
                             {selectedSubmission.certificateImage ? (
                               <>
                                 {selectedSubmission.certificateImage.startsWith("data:application/pdf") ? (
@@ -976,38 +954,80 @@ If no training hours is found, leave it as an empty string.`;
                                   />
                                 ) : (
                                   <img
-                                    id="img-inspector-canvas"
                                     src={selectedSubmission.certificateImage}
-                                    alt="Certificate original file"
-                                    className="max-h-[220px] object-contain mx-auto border border-slate-100 rounded-lg max-w-full"
-                                    referrerPolicy="no-referrer"
+                                    alt="수료증 미리보기"
+                                    className="max-h-[220px] object-contain rounded-lg border border-slate-150"
                                   />
                                 )}
                                 <button
-                                  id="btn-zoom-inspector-img"
+                                  type="button"
                                   onClick={() => setZoomedImage(selectedSubmission.certificateImage)}
-                                  className="absolute bottom-2 right-2 bg-slate-900/85 hover:bg-indigo-600 text-white font-medium text-[10px] px-2.5 py-1 transition-all rounded-lg cursor-pointer"
+                                  className="absolute bottom-2.5 right-2.5 px-2.5 py-1.5 bg-slate-900/85 hover:bg-slate-900 text-white text-[10px] font-bold rounded-lg flex items-center gap-1 transition-all"
                                 >
                                   크게보기
                                 </button>
                               </>
                             ) : (
-                              <div className="text-xs text-slate-400" id="blank-img-state">수료증이 등록되지 않았습니다.</div>
+                              <p className="text-[11px] text-slate-400">송부된 파일(이미지/PDF)이 없습니다.</p>
                             )}
                           </div>
                         </div>
 
-                        {/* Review Inputs */}
-                        <div className="space-y-4" id="inspector-interactive-inputs">
-                          <div>
-                            <span className="block text-[10px] text-slate-400 font-bold uppercase">작성 인적사항</span>
-                            <div className="mt-1.5 p-3.5 bg-slate-50 border border-slate-100 rounded-xl grid grid-cols-2 gap-2 text-xs font-medium">
+                        {/* Submitted information & editable verification */}
+                        <div className="space-y-4" id="inspector-inputs">
+                          
+                          {/* 작성 인적사항 section */}
+                          <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 space-y-3">
+                            <span className="block text-xs font-bold text-slate-600 border-b border-slate-200/60 pb-1.5">작성 인적사항</span>
+                            <div className="grid grid-cols-2 gap-4">
                               <div>
-                                <span className="text-slate-400 text-[10px] block">성명</span>
+                                <span className="text-slate-400 text-[10px] block font-semibold">성명</span>
                                 <p className="text-slate-800 text-sm font-semibold">{selectedSubmission.assistantName}</p>
                               </div>
                               <div>
-                                <span className="text-slate-400 text-[10px] block">생년월일(6자리)</span>
+                                <span className="text-slate-400 text-[10px] block font-semibold">생년월일(6자리)</span>
+                                <p className="text-slate-800 text-sm font-mono font-semibold">{selectedSubmission.birthDate}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Editable fields */}
+                          <div className="space-y-3.5" id="verifying-editable-inputs">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1 flex justify-between">
+                                <span>교육과정 과정명 <span className="text-indigo-600">*</span></span>
+                                <span className="text-[10px] text-indigo-500 font-medium">(수정 가능)</span>
+                              </label>
+                              <input
+                                id="admin-course-name"
+                                type="text"
+                                value={courseName || ""}
+                                onChange={(e) => setCourseName(e.target.value)}
+                                placeholder="예: 발달장애인 지원사 보수교육 과정"
+                                className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-550 transition-colors text-slate-800"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1 flex justify-between">
+                                <span>수강 인정 시간 (숫자) <span className="text-indigo-600">*</span></span>
+                                <span className="text-[10px] text-indigo-500 font-medium">(수정 가능)</span>
+                              </label>
+                              <input
+                                id="admin-training-hours"
+                                type="text"
+                                value={trainingHours || ""}
+                                onChange={(e) => setTrainingHours(e.target.value)}
+                                placeholder="인정 교육 시간 수 기입 (예: 4)"
+                                className="w-full px-3 py-2 border border-slate-200 bg-white rounded-xl text-xs font-mono font-semibold focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-555 transition-colors text-slate-800"
+                              />
+                              <p className="text-[10px] text-slate-400 mt-1">인정하는 실 수강 시간(숫자)을 정확히 변경 및 매핑하여 주십시오.</p>
+                            </div>
+                          </div>
+
+                        </div>
+
+                      </div>��(6자리)</span>
                                 <p className="text-slate-800 text-sm font-mono font-semibold">{selectedSubmission.birthDate}</p>
                               </div>
                             </div>
