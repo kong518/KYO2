@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "Submission": {
+      "title": "Submission",
+      "description": "수료증 제출 정보 내역 및 확인용 엔티티",
+      "type": "object",
+      "properties": {
+        "assistantName": {
+          "type": "string",
+          "description": "활동지원사 성명"
+        },
+        "birthDate": {
+          "type": "string",
+          "description": "생년월일 (YYMMDD 형식)"
+        },
+        "certificateImage": {
+          "type": "string",
+          "description": "수료증 이미지 원본 (Base64 형식)"
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "제출 일시"
+        },
+        "isCompleted": {
+          "type": "boolean",
+          "description": "승인 완료 여부"
+        },
+        "trainingHours": {
+          "type": "string",
+          "description": "이수 시간"
+        },
+        "courseName": {
+          "type": "string",
+          "description": "수강 과정명"
+        },
+        "managerNotes": {
+          "type": "string",
+          "description": "관리자 메모"
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "관리자 검토 일시"
+        }
+      },
+      "required": [
+        "assistantName",
+        "birthDate",
+        "certificateImage",
+        "submittedAt",
+        "isCompleted"
+      ]
+    }
+  },
+  "firestore": {
+    "submissions/{submissionId}": {
+      "schema": "Submission",
+      "description": "사용자가 제출한 수료증 목록"
+    }
+  }
+}

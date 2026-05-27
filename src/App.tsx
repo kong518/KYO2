@@ -23,16 +23,47 @@ import {
   X,
   Sparkles,
   ClipboardCheck,
-  Award
+  Award,
+  Lock,
+  LogOut,
+  Settings
 } from "lucide-react";
 import AssistantForm from "./components/AssistantForm";
 import { EducationCertificate, EducationStats } from "./types";
+
+// Firebase Applet Integration
+import { auth, db, googleProvider } from "./firebase";
+import { 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  User 
+} from "firebase/auth";
+import { 
+  collection, 
+  query, 
+  orderBy, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc 
+} from "firebase/firestore";
+
+// Google GenAI Platform
+import { GoogleGenAI, Type } from "@google/genai";
 
 export default function App() {
   const [userMode, setUserMode] = useState<"assistant" | "admin">("assistant");
   const [submissions, setSubmissions] = useState<EducationCertificate[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Authentication status
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authInitialized, setAuthInitialized] = useState<boolean>(false);
+  const [showApiKeySetting, setShowApiKeySetting] = useState<boolean>(false);
+  const [tempApiKey, setTempApiKey] = useState<string>("");
 
   // Administrative Control States
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
@@ -51,48 +82,122 @@ export default function App() {
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState<boolean>(false);
   const [aiFeedback, setAiFeedback] = useState<{ type: "success" | "error" | "mismatch"; message: string } | null>(null);
 
+  // Load API Key from local storage at start
   useEffect(() => {
-    fetchSubmissions();
+    const savedKey = localStorage.getItem("USER_GEMINI_API_KEY") || "";
+    setTempApiKey(savedKey);
   }, []);
 
-  const fetchSubmissions = async () => {
+  // Track Firebase User Active Session
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setAuthInitialized(true);
+      if (user) {
+        fetchSubmissions(user);
+      } else {
+        setSubmissions([]);
+        setSelectedSubmissionId(null);
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleAdminLogin = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/submissions");
-      if (response.ok) {
-        const data = await response.json();
-        setSubmissions(data);
-        if (data.length > 0 && !selectedSubmissionId) {
-          // Auto-select first item
-          const first = data[0];
-          setSelectedSubmissionId(first.id);
-          setCourseName(first.courseName || "");
-          setTrainingHours(first.trainingHours || "");
-          setManagerNotes(first.managerNotes || "");
-        }
+      await signInWithPopup(auth, googleProvider);
+    } catch (error: any) {
+      console.error("Login failed:", error);
+      alert("로그인에 실패했습니다: " + (error.message || ""));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdminLogout = async () => {
+    if (confirm("대시보드에서 로그아웃하시겠습니까?")) {
+      try {
+        await signOut(auth);
+        setUserMode("assistant");
+      } catch (error) {
+        console.error("Logout failed:", error);
       }
-    } catch (error) {
-      console.error("Failed to fetch submissions:", error);
+    }
+  };
+
+  const fetchSubmissions = async (user?: any) => {
+    const activeUser = user || auth.currentUser;
+    if (!activeUser) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const q = query(collection(db, "submissions"), orderBy("submittedAt", "desc"));
+      const querySnapshot = await getDocs(q);
+      const data: EducationCertificate[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const item = docSnap.data();
+        data.push({
+          id: docSnap.id,
+          assistantName: item.assistantName || "",
+          birthDate: item.birthDate || "",
+          certificateImage: item.certificateImage || "",
+          submittedAt: item.submittedAt || "",
+          isCompleted: item.isCompleted || false,
+          trainingHours: item.trainingHours || "",
+          courseName: item.courseName || "",
+          managerNotes: item.managerNotes || "",
+          reviewedAt: item.reviewedAt || "",
+        });
+      });
+      setSubmissions(data);
+      if (data.length > 0 && !selectedSubmissionId) {
+        // Auto-select first item
+        const first = data[0];
+        setSelectedSubmissionId(first.id);
+        setCourseName(first.courseName || "");
+        setTrainingHours(first.trainingHours || "");
+        setManagerNotes(first.managerNotes || "");
+      }
+    } catch (error: any) {
+      console.error("Failed to fetch submissions from Firestore:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleRefreshList = async () => {
+    if (!auth.currentUser) return;
     setRefreshing(true);
     try {
-      const response = await fetch("/api/submissions");
-      if (response.ok) {
-        const data = await response.json();
-        setSubmissions(data);
-        // Sync fields for currently selected submission
-        if (selectedSubmissionId) {
-          const current = data.find((item: any) => item.id === selectedSubmissionId);
-          if (current) {
-            setCourseName(current.courseName || "");
-            setTrainingHours(current.trainingHours || "");
-            setManagerNotes(current.managerNotes || "");
-          }
+      const q = query(collection(db, "submissions"), orderBy("submittedAt", "desc"));
+      const querySnapshot = await getDocs(q);
+      const data: EducationCertificate[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const item = docSnap.data();
+        data.push({
+          id: docSnap.id,
+          assistantName: item.assistantName || "",
+          birthDate: item.birthDate || "",
+          certificateImage: item.certificateImage || "",
+          submittedAt: item.submittedAt || "",
+          isCompleted: item.isCompleted || false,
+          trainingHours: item.trainingHours || "",
+          courseName: item.courseName || "",
+          managerNotes: item.managerNotes || "",
+          reviewedAt: item.reviewedAt || "",
+        });
+      });
+      setSubmissions(data);
+      if (selectedSubmissionId) {
+        const current = data.find((item: any) => item.id === selectedSubmissionId);
+        if (current) {
+          setCourseName(current.courseName || "");
+          setTrainingHours(current.trainingHours || "");
+          setManagerNotes(current.managerNotes || "");
         }
       }
     } catch (error) {
@@ -104,98 +209,102 @@ export default function App() {
 
   const handleNewSubmission = async (newSub: { assistantName: string; birthDate: string; certificateImage: string }) => {
     try {
-      const res = await fetch("/api/submissions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(newSub),
-      });
+      const submitData = {
+        assistantName: newSub.assistantName,
+        birthDate: newSub.birthDate,
+        certificateImage: newSub.certificateImage,
+        submittedAt: new Date().toISOString(),
+        isCompleted: false,
+        trainingHours: "",
+        courseName: "",
+        managerNotes: "",
+      };
 
-      if (res.ok) {
-        const data = await res.json();
-        setSubmissions((prev) => [data, ...prev]);
-        setSelectedSubmissionId(data.id);
-        setCourseName(data.courseName || "");
-        setTrainingHours(data.trainingHours || "");
-        setManagerNotes(data.managerNotes || "");
-        return { success: true };
-      } else {
-        const errorData = await res.json().catch(() => ({}));
-        return {
-          success: false,
-          error: errorData.error || `서버 오류 (상태 코드: ${res.status})`
-        };
-      }
+      const docSnap = await addDoc(collection(db, "submissions"), submitData);
+      const itemWithId: EducationCertificate = {
+        id: docSnap.id,
+        ...submitData
+      };
+
+      // Live state syncing locally to let user feel immediate satisfaction
+      setSubmissions((prev) => [itemWithId, ...prev]);
+      
+      // Auto-focus selected
+      setSelectedSubmissionId(docSnap.id);
+      setCourseName("");
+      setTrainingHours("");
+      setManagerNotes("");
+      
+      return { success: true };
     } catch (error: any) {
-      console.error("Failed to submit certificate:", error);
-      return { success: false, error: error.message || "네트워크 연결 요류가 발생했습니다." };
+      console.error("Failed to submit certificate to Firestore:", error);
+      return { 
+        success: false, 
+        error: error.message || "데이터 저장 중 오류가 발생했습니다. 보안 제약을 확인해 주세요." 
+      };
     }
   };
 
   // Handles updating the training metadata and completion state 
   const handleSaveVerification = async (id: string, isCompletedStatus: boolean) => {
+    if (!auth.currentUser) {
+      alert("로그인이 만료되었거나 승인 권한이 없습니다.");
+      return;
+    }
     setActionLoading(true);
     try {
-      const response = await fetch(`/api/submissions/${id}/review`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          isCompleted: isCompletedStatus,
-          trainingHours,
-          courseName,
-          managerNotes,
-        }),
-      });
+      const docRef = doc(db, "submissions", id);
+      const updateData = {
+        isCompleted: isCompletedStatus,
+        trainingHours,
+        courseName,
+        managerNotes,
+        reviewedAt: new Date().toISOString(),
+      };
 
-      if (response.ok) {
-        const updated = await response.json();
-        setSubmissions((prev) =>
-          prev.map((item) => (item.id === id ? updated : item))
-        );
-        alert(isCompletedStatus ? "교육 이수 확인 처리가 완료되었습니다!" : "수료 정보가 안전하게 임시 저장되었습니다.");
-      } else {
-        alert("처리에 실패하였습니다.");
-      }
-    } catch (error) {
+      await updateDoc(docRef, updateData);
+
+      setSubmissions((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, ...updateData } : item))
+      );
+      alert(isCompletedStatus ? "교육 이수 확인 처리가 완료되었습니다!" : "수료 정보가 안전하게 임시 저장되었습니다.");
+    } catch (error: any) {
       console.error("Verification processing failed:", error);
+      alert("처리에 실패하였습니다. 관리 권한이 누락되었습니다: " + (error.message || ""));
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (!auth.currentUser) {
+      alert("삭제 권한이 없습니다.");
+      return;
+    }
     if (!confirm("이 제출 이력을 영구 삭제하시겠습니까? 수료증 이미지 등 등록된 정보가 완전히 제거됩니다.")) {
       return;
     }
     try {
-      const response = await fetch(`/api/submissions/${id}`, {
-        method: "DELETE",
-      });
-      if (response.ok) {
-        const remaining = submissions.filter((item) => item.id !== id);
-        setSubmissions(remaining);
-        if (selectedSubmissionId === id) {
-          if (remaining.length > 0) {
-            setSelectedSubmissionId(remaining[0].id);
-            setCourseName(remaining[0].courseName || "");
-            setTrainingHours(remaining[0].trainingHours || "");
-            setManagerNotes(remaining[0].managerNotes || "");
-          } else {
-            setSelectedSubmissionId(null);
-            setCourseName("");
-            setTrainingHours("");
-            setManagerNotes("");
-          }
+      await deleteDoc(doc(db, "submissions", id));
+      const remaining = submissions.filter((item) => item.id !== id);
+      setSubmissions(remaining);
+      if (selectedSubmissionId === id) {
+        if (remaining.length > 0) {
+          setSelectedSubmissionId(remaining[0].id);
+          setCourseName(remaining[0].courseName || "");
+          setTrainingHours(remaining[0].trainingHours || "");
+          setManagerNotes(remaining[0].managerNotes || "");
+        } else {
+          setSelectedSubmissionId(null);
+          setCourseName("");
+          setTrainingHours("");
+          setManagerNotes("");
         }
-        alert("성공적으로 삭제되었습니다.");
-      } else {
-        alert("삭제에 실패했습니다.");
       }
-    } catch (error) {
+      alert("성공적으로 삭제되었습니다.");
+    } catch (error: any) {
       console.error("Delete failed:", error);
+      alert("삭제에 실패했습니다: " + (error.message || ""));
     }
   };
 
@@ -207,78 +316,146 @@ export default function App() {
     setAiFeedback(null);
   };
 
+  const getGeminiApiKey = () => {
+    return localStorage.getItem("USER_GEMINI_API_KEY") || (import.meta as any).env.VITE_GEMINI_API_KEY || "";
+  };
+
+  const handleSaveApiKeySetting = (key: string) => {
+    localStorage.setItem("USER_GEMINI_API_KEY", key.trim());
+    setTempApiKey(key.trim());
+    alert("Gemini API Key가 안전하게 브라우저에 저장되었습니다.");
+    setShowApiKeySetting(false);
+  };
+
   const handleAiOcrAnalysis = async (imgBase64: string, subName: string, subBirth: string) => {
     if (!imgBase64) {
       setAiFeedback({ type: "error", message: "수료증 원본 이미지가 등록되어 있지 않습니다." });
       return;
     }
+
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      setAiFeedback({ 
+        type: "error", 
+        message: "Gemini API 키가 등록되어 있지 않습니다.\n\n우측 상단의 [⚙️ API Key 설정] 버튼을 눌러 발급받으신 무료 API Key를 입력 및 저장한 후 다시 추진해 주시기 바랍니다." 
+      });
+      return;
+    }
+
     setAiAnalysisLoading(true);
     setAiFeedback(null);
     try {
-      const response = await fetch("/api/submissions/ocr", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      // Strip base64 prefix
+      let rawBase64 = imgBase64;
+      let mimeType = "image/png";
+
+      if (imgBase64.includes(";base64,")) {
+        const parts = imgBase64.split(";base64,");
+        rawBase64 = parts[1];
+        mimeType = parts[0].replace("data:", "");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+
+      const imagePart = {
+        inlineData: {
+          data: rawBase64,
+          mimeType: mimeType,
         },
-        body: JSON.stringify({ imageBase64: imgBase64 }),
+      };
+
+      const promptMessage = `Please analyze this uploaded online training certificate. 
+Our target is to extract information about the activity assistant (활동지원사) who completed the work.
+Extract the following details from this image:
+1. Name (성명/이름)
+2. Date of Birth (생년월일)
+3. Course Name (교육명칭/수강과정명)
+4. Training Hours (교육이수시간 - 예시: '8시간', '4시간', '2시간' 등)
+
+Return the parsed values in Korean language inside the requested JSON schema.
+If the birth date is found, represent it as 'YYMMDD' (6 digits, e.g., 740125). If we cannot map it cleanly, output YYMMDD base representation.
+If no training hours is found, leave it as an empty string.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [imagePart, promptMessage],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              assistantName: { type: Type.STRING, description: "정확한 성명/이름" },
+              birthDate: { type: Type.STRING, description: "활동지원사 생년월일 (예시: 740125)" },
+              courseName: { type: Type.STRING, description: "교육명칭 또는 과정명 (예시: '장애인활동지원사 보수교육')" },
+              trainingHours: { type: Type.STRING, description: "교육 이수 시간 (예시: '8시간' 또는 '4시간')" }
+            },
+            required: ["assistantName", "birthDate", "courseName", "trainingHours"]
+          }
+        }
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        const extractedCourse = data.courseName || "";
-        const extractedHours = data.trainingHours || "";
-        const extractedName = data.assistantName || "";
-        const extractedBirth = data.birthDate || "";
+      if (!response.text) {
+        throw new Error("No response returned from Gemini API.");
+      }
 
-        setCourseName(extractedCourse);
-        
-        let normalizedHours = extractedHours;
-        const matchedNum = extractedHours.replace(/[^0-9.]/g, "");
-        if (matchedNum && !isNaN(parseFloat(matchedNum))) {
-          normalizedHours = matchedNum;
+      const data = JSON.parse(response.text.trim());
+      const extractedCourse = data.courseName || "";
+      const extractedHours = data.trainingHours || "";
+      const extractedName = data.assistantName || "";
+      const extractedBirth = data.birthDate || "";
+
+      setCourseName(extractedCourse);
+      
+      let normalizedHours = extractedHours;
+      const matchedNum = extractedHours.replace(/[^0-9.]/g, "");
+      if (matchedNum && !isNaN(parseFloat(matchedNum))) {
+        normalizedHours = matchedNum;
+      }
+      setTrainingHours(normalizedHours);
+
+      const cleanNameSub = subName.replace(/\s+/g, "");
+      const cleanNameExt = extractedName.replace(/\s+/g, "");
+      
+      const cleanBirthSub = subBirth.replace(/[^0-9]/g, "");
+      const cleanBirthExt = extractedBirth.replace(/[^0-9]/g, "");
+      
+      const isNameMismatch = cleanNameSub && cleanNameExt && !cleanNameSub.includes(cleanNameExt) && !cleanNameExt.includes(cleanNameSub);
+      const isBirthMismatch = cleanBirthSub && cleanBirthExt && cleanBirthSub !== cleanBirthExt;
+
+      if (isNameMismatch || isBirthMismatch) {
+        let mismatchDetail = "⚠️ 제출 정보와 수료증 분석 정보가 일치하지 않습니다:\n";
+        if (isNameMismatch) {
+          mismatchDetail += `• 제출 성명: ${subName} ↔ AI 분석: ${extractedName}\n`;
         }
-        setTrainingHours(normalizedHours);
-
-        const cleanNameSub = subName.replace(/\s+/g, "");
-        const cleanNameExt = extractedName.replace(/\s+/g, "");
-        
-        const cleanBirthSub = subBirth.replace(/[^0-9]/g, "");
-        const cleanBirthExt = extractedBirth.replace(/[^0-9]/g, "");
-        
-        const isNameMismatch = cleanNameSub && cleanNameExt && !cleanNameSub.includes(cleanNameExt) && !cleanNameExt.includes(cleanNameSub);
-        const isBirthMismatch = cleanBirthSub && cleanBirthExt && cleanBirthSub !== cleanBirthExt;
-
-        if (isNameMismatch || isBirthMismatch) {
-          let mismatchDetail = "⚠️ 제출 정보와 수료증 분석 정보가 일치하지 않습니다:\n";
-          if (isNameMismatch) {
-            mismatchDetail += `• 제출 성명: ${subName} ↔ AI 분석: ${extractedName}\n`;
-          }
-          if (isBirthMismatch) {
-            mismatchDetail += `• 제출 생년월일: ${subBirth} ↔ AI 분석: ${extractedBirth}\n`;
-          }
-          mismatchDetail += "\n정확한 서류 수료 대상인지 확인 후 시간 승인을 진행해 주십시오.";
-          setAiFeedback({
-            type: "mismatch",
-            message: mismatchDetail,
-          });
-        } else {
-          setAiFeedback({
-            type: "success",
-            message: `✨ AI 분석 완료: 과정명과 이수시간을 자동으로 입력했습니다. (수료증 정보: ${extractedName || "성명미상"}, ${extractedBirth || "생년월일미상"})`,
-          });
+        if (isBirthMismatch) {
+          mismatchDetail += `• 제출 생년월일: ${subBirth} ↔ AI 분석: ${extractedBirth}\n`;
         }
-      } else {
-        const errData = await response.json().catch(() => ({}));
+        mismatchDetail += "\n정확한 서류 수료 대상인지 확인 후 시간 승인을 진행해 주십시오.";
         setAiFeedback({
-          type: "error",
-          message: errData.error || `서버 분석 실패 (상태 코드: ${response.status})`
+          type: "mismatch",
+          message: mismatchDetail,
+        });
+      } else {
+        setAiFeedback({
+          type: "success",
+          message: `✨ AI 분석 완료: 과정명과 이수시간을 자동으로 입력했습니다. (수료증 정보: ${extractedName || "성명미상"}, ${extractedBirth || "생년월일미상"})`,
         });
       }
     } catch (error: any) {
       console.error("AI Analysis error:", error);
+      let errMsg = error.message || "";
+      if (
+        errMsg.includes("API key expired") || 
+        errMsg.includes("API_KEY_INVALID") || 
+        errMsg.includes("INVALID_ARGUMENT") || 
+        errMsg.includes("key expired") ||
+        errMsg.includes("400")
+      ) {
+        errMsg = "현재 입력 및 서버에 설정된 Gemini API 키가 올바르지 않거나 만료되었습니다.\n우측 상단의 [⚙️ API Key 설정] 메뉴에서 유효한 Gemini API Key를 새로 등록하여 주십시오 (구글 AI 스튜디오에서 무료 발급 가능).";
+      }
       setAiFeedback({
         type: "error",
-        message: "분석 서버 또는 네트워크 연결 오류가 발생했습니다: " + (error.message || "")
+        message: "분석 실패: " + errMsg
       });
     } finally {
       setAiAnalysisLoading(false);
@@ -298,6 +475,7 @@ export default function App() {
         return isNaN(num) ? sum : sum + num;
       }, 0),
   };
+
 
   const selectedSubmission = submissions.find((s) => s.id === selectedSubmissionId);
 
@@ -333,16 +511,53 @@ export default function App() {
           </div>
         </div>
 
-        {/* Switcher back to User mode when viewing Coordinator Dashboard */}
-        {userMode === "admin" && (
-          <button
-            id="back-to-assistant-btn"
-            onClick={() => setUserMode("assistant")}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100/85 transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            ← 제출 화면으로 돌아가기
-          </button>
-        )}
+        <div className="flex items-center gap-2.5">
+          {/* Active Admin session tags & Controls */}
+          {currentUser && (
+            <div className="hidden sm:flex items-center gap-2 mr-2 border-r border-slate-200 pr-4">
+              <div className="w-7 h-7 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 font-bold text-[10px] uppercase">
+                {currentUser.displayName?.slice(0, 2) || "M"}
+              </div>
+              <div className="text-left leading-none font-sans">
+                <span className="text-[10px] font-bold text-slate-800 block leading-tight">{currentUser.displayName || "관리자"}</span>
+                <span className="text-[8px] text-slate-400 block leading-tight font-mono">{currentUser.email}</span>
+              </div>
+            </div>
+          )}
+
+          {userMode === "admin" && currentUser && (
+            <>
+              <button
+                onClick={() => setShowApiKeySetting(true)}
+                className="text-xs font-semibold text-slate-600 hover:text-slate-800 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 transition-all cursor-pointer flex items-center gap-1"
+                title="Gemini AI Key 설정"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span className="hidden leading-none md:inline">API Key 설정</span>
+              </button>
+              
+              <button
+                onClick={handleAdminLogout}
+                className="text-xs font-semibold text-rose-600 hover:text-rose-800 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 transition-all cursor-pointer flex items-center gap-1"
+                title="로그아웃"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden leading-none md:inline">로그아웃</span>
+              </button>
+            </>
+          )}
+
+          {/* Switcher back to User mode when viewing Coordinator Dashboard */}
+          {userMode === "admin" && (
+            <button
+              id="back-to-assistant-btn"
+              onClick={() => setUserMode("assistant")}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100/85 transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              ← 제출 화면으로 돌아가기
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Main Execution Arena */}
@@ -369,9 +584,52 @@ export default function App() {
                 <AssistantForm onNewSubmission={handleNewSubmission} />
               </div>
             </motion.div>
+          ) : !currentUser ? (
+            /* =======================================
+               ROLE: ADMINISTRATIVE AUTHENTICATION GATE
+               ======================================= */
+            <motion.div
+              key="admin-login-gate"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.3 }}
+              className="py-16 max-w-md mx-auto px-4"
+              id="admin-login-section"
+            >
+              <div className="bg-white border border-slate-200 p-8 shadow-xl rounded-3xl text-center space-y-6">
+                <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center mx-auto text-indigo-600 shadow-xs">
+                  <Lock className="w-8 h-8" />
+                </div>
+                
+                <div className="space-y-2">
+                  <h3 className="text-base font-bold text-slate-950">관리자 계정 인증</h3>
+                  <p className="text-slate-500 text-xs leading-relaxed font-medium">
+                    장애인활동지원 수료대장 확인 및 교육시간 승인을<br />
+                    진행하시려면 구글 계정으로 로그인해 주시기 바랍니다.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleAdminLogin}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-605 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                >
+                  <Users className="w-4 h-4" />
+                  {loading ? "로그인 시도 중..." : "구글 계정으로 로그인 (인증 및 입장)"}
+                </button>
+
+                <button
+                  onClick={() => setUserMode("assistant")}
+                  className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors block mx-auto underline cursor-pointer"
+                >
+                  활동지원사 수료증 제출 양식으로 이동
+                </button>
+              </div>
+            </motion.div>
           ) : (
             /* =======================================
-               ROLE: INSTITUTION ADMIN PORT PORTAL
+               ROLE: INSTITUTION ADMIN PORT PORTAL (SIGNED IN)
                ======================================= */
             <motion.div
               key="admin-portal"
@@ -845,6 +1103,79 @@ export default function App() {
                 className="max-w-full max-h-[85vh] object-contain border border-slate-100 rounded-2xl shadow-2xl"
                 referrerPolicy="no-referrer"
               />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* API Key configuration modal */}
+      <AnimatePresence>
+        {showApiKeySetting && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+            id="apikey-modal-overlay"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              className="bg-white w-full max-w-md rounded-2xl border border-slate-200 p-6 shadow-2xl space-y-4"
+              id="apikey-modal-textbox"
+            >
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2 text-indigo-600">
+                  <Settings className="w-5 h-5" />
+                  <h4 className="text-sm font-bold text-slate-800 font-sans">Gemini API Key 설정</h4>
+                </div>
+                <button
+                  onClick={() => setShowApiKeySetting(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500 leading-relaxed font-sans">
+                  본 애플리케이션의 <strong>AI 수료증 자동 분석 기능</strong>은 Google Gemini API를 사용합니다. 
+                  우측 API 키를 안전하게 브라우저 로컬 스토리지에만 저장하여 완전히 무료로 분석을 수행할 수 있습니다.
+                </p>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 block font-sans">Gemini API Key 입력</label>
+                  <input
+                    type="password"
+                    value={tempApiKey}
+                    onChange={(e) => setTempApiKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full px-3 py-2 border border-slate-200 bg-slate-50/50 rounded-xl text-xs font-mono focus:outline-none focus:border-indigo-500 focus:bg-white transition-all font-semibold"
+                  />
+                </div>
+
+                <p className="text-[10px] text-slate-400 italic font-sans">
+                  * 입력하신 API Key는 외부 서버로 전송되지 않으며, 사용자 본인의 로컬 브라우저 내에만 암호화 데이터 형태로 보관됩니다.
+                  <br />
+                  * <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-indigo-600 font-semibold hover:underline">Google AI Studio</a>에서 1분 만에 무료 API Key를 바로 발급받아 등록할 수 있습니다.
+                </p>
+              </div>
+
+              <div className="flex gap-2 justify-end border-t border-slate-100 pt-3 font-sans">
+                <button
+                  onClick={() => setShowApiKeySetting(false)}
+                  className="px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={() => handleSaveApiKeySetting(tempApiKey)}
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm cursor-pointer"
+                >
+                  저장하기
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

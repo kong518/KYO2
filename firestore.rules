@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions for validation
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Submission validation helper
+    function isValidSubmission(data) {
+      return data.assistantName is string 
+        && data.assistantName.size() >= 1 
+        && data.assistantName.size() <= 100
+        && data.birthDate is string 
+        && data.birthDate.size() >= 4 
+        && data.birthDate.size() <= 20
+        && data.certificateImage is string 
+        && data.certificateImage.size() > 0
+        && data.submittedAt is string
+        && data.isCompleted is bool;
+    }
+
+    // Submissions Rule Map
+    match /submissions/{submissionId} {
+      // 1. Allow submission creation globally without auth (lets trainees submit certificates freely)
+      allow create: if isValidSubmission(incoming());
+
+      // 2. Read, update, and delete are private to Firebase authenticated managers/reviewers
+      allow read, delete: if isSignedIn();
+
+      allow update: if isSignedIn() 
+        && isValidSubmission(incoming())
+        // Prevent modifying immutable fields on update
+        && incoming().assistantName == existing().assistantName
+        && incoming().birthDate == existing().birthDate
+        && incoming().certificateImage == existing().certificateImage
+        && incoming().submittedAt == existing().submittedAt;
+    }
+  }
+}
