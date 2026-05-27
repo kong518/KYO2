@@ -1,0 +1,738 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  Users,
+  CheckCircle2,
+  Clock,
+  LayoutDashboard,
+  FileText,
+  Search,
+  Eye,
+  Trash2,
+  RefreshCw,
+  ChevronRight,
+  UserCheck,
+  Calendar,
+  Layers,
+  FileSpreadsheet,
+  X,
+  Sparkles,
+  ClipboardCheck,
+  Award
+} from "lucide-react";
+import AssistantForm from "./components/AssistantForm";
+import { EducationCertificate, EducationStats } from "./types";
+
+export default function App() {
+  const [userMode, setUserMode] = useState<"assistant" | "admin">("assistant");
+  const [submissions, setSubmissions] = useState<EducationCertificate[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  // Administrative Control States
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+  
+  // Verification form states for current selection
+  const [courseName, setCourseName] = useState<string>("");
+  const [trainingHours, setTrainingHours] = useState<string>("");
+  const [managerNotes, setManagerNotes] = useState<string>("");
+  const [subFilter, setSubFilter] = useState<"all" | "pending" | "completed">("all");
+  
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    fetchSubmissions();
+  }, []);
+
+  const fetchSubmissions = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/submissions");
+      if (response.ok) {
+        const data = await response.json();
+        setSubmissions(data);
+        if (data.length > 0 && !selectedSubmissionId) {
+          // Auto-select first item
+          const first = data[0];
+          setSelectedSubmissionId(first.id);
+          setCourseName(first.courseName || "");
+          setTrainingHours(first.trainingHours || "");
+          setManagerNotes(first.managerNotes || "");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch submissions:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefreshList = async () => {
+    setRefreshing(true);
+    try {
+      const response = await fetch("/api/submissions");
+      if (response.ok) {
+        const data = await response.json();
+        setSubmissions(data);
+        // Sync fields for currently selected submission
+        if (selectedSubmissionId) {
+          const current = data.find((item: any) => item.id === selectedSubmissionId);
+          if (current) {
+            setCourseName(current.courseName || "");
+            setTrainingHours(current.trainingHours || "");
+            setManagerNotes(current.managerNotes || "");
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error refreshing submissions:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleNewSubmission = async (newSub: { assistantName: string; birthDate: string; certificateImage: string }) => {
+    try {
+      const res = await fetch("/api/submissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newSub),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setSubmissions((prev) => [data, ...prev]);
+        setSelectedSubmissionId(data.id);
+        setCourseName(data.courseName || "");
+        setTrainingHours(data.trainingHours || "");
+        setManagerNotes(data.managerNotes || "");
+        return true;
+      }
+    } catch (error) {
+      console.error("Failed to submit certificate:", error);
+    }
+    return false;
+  };
+
+  // Handles updating the training metadata and completion state 
+  const handleSaveVerification = async (id: string, isCompletedStatus: boolean) => {
+    setActionLoading(true);
+    try {
+      const response = await fetch(`/api/submissions/${id}/review`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          isCompleted: isCompletedStatus,
+          trainingHours,
+          courseName,
+          managerNotes,
+        }),
+      });
+
+      if (response.ok) {
+        const updated = await response.json();
+        setSubmissions((prev) =>
+          prev.map((item) => (item.id === id ? updated : item))
+        );
+        alert(isCompletedStatus ? "교육 이수 확인 처리가 완료되었습니다!" : "수료 정보가 안전하게 임시 저장되었습니다.");
+      } else {
+        alert("처리에 실패하였습니다.");
+      }
+    } catch (error) {
+      console.error("Verification processing failed:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("이 제출 이력을 영구 삭제하시겠습니까? 수료증 이미지 등 등록된 정보가 완전히 제거됩니다.")) {
+      return;
+    }
+    try {
+      const response = await fetch(`/api/submissions/${id}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        const remaining = submissions.filter((item) => item.id !== id);
+        setSubmissions(remaining);
+        if (selectedSubmissionId === id) {
+          if (remaining.length > 0) {
+            setSelectedSubmissionId(remaining[0].id);
+            setCourseName(remaining[0].courseName || "");
+            setTrainingHours(remaining[0].trainingHours || "");
+            setManagerNotes(remaining[0].managerNotes || "");
+          } else {
+            setSelectedSubmissionId(null);
+            setCourseName("");
+            setTrainingHours("");
+            setManagerNotes("");
+          }
+        }
+        alert("성공적으로 삭제되었습니다.");
+      } else {
+        alert("삭제에 실패했습니다.");
+      }
+    } catch (error) {
+      console.error("Delete failed:", error);
+    }
+  };
+
+  const handleSelectItem = (sub: EducationCertificate) => {
+    setSelectedSubmissionId(sub.id);
+    setCourseName(sub.courseName || "");
+    setTrainingHours(sub.trainingHours || "");
+    setManagerNotes(sub.managerNotes || "");
+  };
+
+  // Stats Calculations for verifying completion & total training hours
+  const stats = {
+    total: submissions.length,
+    completedCount: submissions.filter((s) => s.isCompleted).length,
+    pendingCount: submissions.filter((s) => !s.isCompleted).length,
+    totalHours: submissions
+      .filter((s) => s.isCompleted && s.trainingHours)
+      .reduce((sum, s) => {
+        // Parse numbers out of training hours text
+        const num = parseFloat(s.trainingHours.replace(/[^0-9.]/g, ""));
+        return isNaN(num) ? sum : sum + num;
+      }, 0),
+  };
+
+  const selectedSubmission = submissions.find((s) => s.id === selectedSubmissionId);
+
+  // Search and status filters
+  const filteredSubmissions = submissions.filter((sub) => {
+    const matchesSearch =
+      sub.assistantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sub.birthDate.includes(searchQuery) ||
+      (sub.courseName && sub.courseName.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    if (subFilter === "pending") {
+      return matchesSearch && !sub.isCompleted;
+    }
+    if (subFilter === "completed") {
+      return matchesSearch && sub.isCompleted;
+    }
+    return matchesSearch;
+  });
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans" id="app-viewport">
+      {/* Top Main Banner Header */}
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-row justify-between items-center gap-4 sticky top-0 z-40 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-indigo-100">
+            <Award className="w-6 h-6" />
+          </div>
+          <div>
+            <span className="text-[10px] font-bold tracking-wider text-indigo-600 block">장애인활동지원</span>
+            <h1 className="text-base font-bold tracking-tight text-slate-900">
+              온라인 수료증 제출
+            </h1>
+          </div>
+        </div>
+
+        {/* Switcher back to User mode when viewing Coordinator Dashboard */}
+        {userMode === "admin" && (
+          <button
+            id="back-to-assistant-btn"
+            onClick={() => setUserMode("assistant")}
+            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100/85 transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            ← 제출 화면으로 돌아가기
+          </button>
+        )}
+      </header>
+
+      {/* Main Execution Arena */}
+      <main className="w-full" id="main-content-area">
+        <AnimatePresence mode="wait">
+          {userMode === "assistant" ? (
+            /* =======================================
+               ROLE: ASSISTANT SUBMISSION PORT PORTAL
+               ======================================= */
+            <motion.div
+              key="assistant-portal"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.3 }}
+              className="py-10 max-w-4xl mx-auto px-4"
+              id="assistant-section"
+            >
+              {/* Form container with modern card styling and rounded corner layout */}
+              <div 
+                className="bg-white border border-slate-200/80 p-2 sm:p-5 shadow-lg shadow-slate-100 rounded-3xl"
+                id="assistant-form-outer-card"
+              >
+                <AssistantForm onNewSubmission={handleNewSubmission} />
+              </div>
+            </motion.div>
+          ) : (
+            /* =======================================
+               ROLE: INSTITUTION ADMIN PORT PORTAL
+               ======================================= */
+            <motion.div
+              key="admin-portal"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="py-10 max-w-7xl mx-auto px-4 space-y-8"
+              id="admin-section"
+            >
+              {/* Admin Hero Header */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-slate-200 pb-5 gap-4" id="admin-hero">
+                <div>
+                  <h2 className="text-xl font-bold tracking-tight text-slate-900">
+                    수료증 승인 및 이력 관리
+                  </h2>
+                  <p className="text-slate-505 text-xs mt-1">
+                    활동지원사 분들이 접수한 수료 내역 및 파일 원본을 성실히 검증하고, 연수 이수 시간을 신속하게 결산합니다.
+                  </p>
+                </div>
+
+                <div className="flex gap-2.5 w-full sm:w-auto" id="header-action-panel">
+                  <button
+                    id="btn-trigger-refresh"
+                    onClick={handleRefreshList}
+                    disabled={refreshing}
+                    className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-200 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                    목록 새로고침
+                  </button>
+                  
+                  <button
+                    id="btn-fake-export"
+                    onClick={() => {
+                      if (submissions.length === 0) {
+                        alert("다운로드할 데이터가 없습니다.");
+                        return;
+                      }
+                      const csvContent = [
+                        ["제출ID", "성명", "생년월일", "이수확인여부", "인증된교육시간", "교육과정명", "제출시각", "참고사항"],
+                        ...submissions.map((s) => [
+                          s.id, s.assistantName, s.birthDate, s.isCompleted ? "이수완료" : "검토대기", s.trainingHours || "0", s.courseName || "확인중", s.submittedAt, s.managerNotes || ""
+                        ])
+                      ].map(e => e.join(",")).join("\n");
+                      
+                      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement("a");
+                      link.setAttribute("href", url);
+                      link.setAttribute("download", `온라인교육_이수자현황_${new Date().toISOString().slice(0,10)}.csv`);
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-indigo-100 cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    엑셀 대장 다운로드 (CSV)
+                  </button>
+                </div>
+              </div>
+
+              {/* Verified Dynamic counters strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" id="stats-grid">
+                <div className="p-5 bg-white border border-slate-200 shadow-xs rounded-2xl flex items-center justify-between" id="stat-total">
+                  <div>
+                    <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase block">총 접수 수료증</span>
+                    <h3 className="text-2xl font-bold mt-1 text-slate-900">{stats.total}건</h3>
+                  </div>
+                  <div className="w-10 h-10 bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 rounded-xl font-bold ml-2">
+                    <FileText className="w-5 h-5 text-indigo-500" />
+                  </div>
+                </div>
+
+                <div className="p-5 bg-emerald-50/40 border border-emerald-100 shadow-xs rounded-2xl flex items-center justify-between" id="stat-completed">
+                  <div>
+                    <span className="text-[10px] font-bold tracking-wider text-emerald-600 uppercase block">교육 이수 확인</span>
+                    <h3 className="text-2xl font-bold mt-1 text-emerald-900">{stats.completedCount}건</h3>
+                  </div>
+                  <div className="w-10 h-10 bg-emerald-100/50 border border-emerald-200/50 flex items-center justify-center text-emerald-600 rounded-xl ml-2">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                </div>
+
+                <div className="p-5 bg-amber-50/40 border border-amber-100 shadow-xs rounded-2xl flex items-center justify-between" id="stat-pending">
+                  <div>
+                    <span className="text-[10px] font-bold tracking-wider text-amber-600 uppercase block">검토 대기 건수</span>
+                    <h3 className="text-2xl font-bold mt-1 text-amber-900">{stats.pendingCount}건</h3>
+                  </div>
+                  <div className="w-10 h-10 bg-amber-100/50 border border-amber-200/50 flex items-center justify-center text-amber-600 rounded-xl ml-2">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                </div>
+
+                <div className="p-5 bg-indigo-50/40 border border-indigo-100 shadow-xs rounded-2xl flex items-center justify-between" id="stat-hours">
+                  <div>
+                    <span className="text-[10px] font-bold tracking-wider text-indigo-600 uppercase block">누적 승인 교육시간</span>
+                    <h3 className="text-2xl font-bold mt-1 text-indigo-900">{stats.totalHours}시간</h3>
+                  </div>
+                  <div className="w-10 h-10 bg-indigo-100/50 border border-indigo-200/50 flex items-center justify-center text-indigo-600 rounded-xl font-bold ml-2">
+                    <Award className="w-5 h-5 text-indigo-600" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Master-Detail Dual Columns Workdesk */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8" id="admin-work-stage">
+                
+                {/* LEFT CONTEXT PANEL: Search, Filter & List of submissions */}
+                <div className="lg:col-span-5 bg-white border border-slate-205/85 p-5 rounded-2xl shadow-sm flex flex-col min-h-[500px]" id="submissions-list-pane">
+                  
+                  {/* Title & Filter Options */}
+                  <div className="mb-4 space-y-3" id="filters-container">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider block">접수 수료증 내역</h3>
+                      <span className="text-[10px] font-medium text-slate-400">정렬기준: 최신순</span>
+                    </div>
+
+                    {/* Filter Mode Switching Badges */}
+                    <div className="flex flex-wrap gap-1.5" id="records-tab-toggles">
+                      <button
+                        id="filter-all"
+                        onClick={() => setSubFilter("all")}
+                        className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                          subFilter === "all"
+                            ? "bg-slate-800 border-slate-800 text-white"
+                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        전체 ({submissions.length})
+                      </button>
+                      <button
+                        id="filter-pending"
+                        onClick={() => setSubFilter("pending")}
+                        className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                          subFilter === "pending"
+                            ? "bg-amber-600 border-amber-500 text-white"
+                            : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
+                        }`}
+                      >
+                        미확인 ({submissions.filter(s => !s.isCompleted).length})
+                      </button>
+                      <button
+                        id="filter-completed"
+                        onClick={() => setSubFilter("completed")}
+                        className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                          subFilter === "completed"
+                            ? "bg-emerald-600 border-emerald-500 text-white"
+                            : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
+                        }`}
+                      >
+                        확인완료 ({submissions.filter(s => s.isCompleted).length})
+                      </button>
+                    </div>
+
+                    {/* Unified Search Input Textbox */}
+                    <div className="relative">
+                      <span className="absolute left-3 top-3 text-slate-400">
+                        <Search className="w-3.5 h-3.5" />
+                      </span>
+                      <input
+                        id="admin-search-text"
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="이름, 생년월일 또는 교육과정명 검색..."
+                        className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50/20 focus:bg-white focus:outline-none transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dynamic Records scroll region */}
+                  <div className="flex-1 max-h-[500px] overflow-y-auto divide-y divide-slate-100 pr-1.5" id="submissions-records-scroll">
+                    {loading ? (
+                      <div className="text-center py-10 font-medium text-slate-400 text-xs">기록을 불러오는 중입니다...</div>
+                    ) : filteredSubmissions.length === 0 ? (
+                      <div className="text-center py-16 text-slate-400 text-xs font-semibold bg-slate-50 border border-slate-100 rounded-xl">
+                        조건에 일치하는 내역이 존재하지 않습니다.
+                      </div>
+                    ) : (
+                      filteredSubmissions.map((sub) => {
+                        const isSelected = sub.id === selectedSubmissionId;
+                        return (
+                          <div
+                            key={sub.id}
+                            id={`submission-item-${sub.id}`}
+                            onClick={() => handleSelectItem(sub)}
+                            className={`p-3 my-1.5 cursor-pointer transition-all border flex items-center justify-between rounded-xl ${
+                              isSelected
+                                ? "bg-indigo-50/50 border-indigo-200 ring-2 ring-indigo-50/30"
+                                : "bg-white border-transparent hover:bg-slate-50"
+                            }`}
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-sm text-slate-800">{sub.assistantName}</span>
+                                <span className="text-[10px] font-medium text-slate-400">{sub.birthDate}</span>
+                              </div>
+                              <p className="text-xs text-slate-500 truncate max-w-[200px]">
+                                {sub.courseName || <em className="text-slate-400 font-normal">과정명 미지정</em>}
+                              </p>
+                              <div className="flex items-center gap-3 text-[10px] text-slate-400">
+                                <span>시간: {sub.trainingHours || "미입력"}</span>
+                                <span>제출: {new Date(sub.submittedAt).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                            <div className="shrink-0 pl-2">
+                              {sub.isCompleted ? (
+                                <span className="px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold rounded-full">
+                                  이수 완료
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold rounded-full">
+                                  검토 대기
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* RIGHT CONTEXT PANEL: Certificate Verification Workdesk details */}
+                <div className="lg:col-span-7 bg-white border border-slate-200 p-6 rounded-2xl shadow-sm flex flex-col min-h-[500px]" id="verification-inspector-pane">
+                  {selectedSubmission ? (
+                    <div className="space-y-5" id="inspector-workdesk">
+                      
+                      <div className="flex justify-between items-center border-b border-slate-100 pb-3" id="inspector-action-header">
+                        <div>
+                          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">제출물 검증</span>
+                          <h4 className="text-sm font-semibold text-slate-800">교육 세부 수료 사항 검토</h4>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] font-mono text-slate-400 block">ID: {selectedSubmission.id}</span>
+                        </div>
+                      </div>
+
+                      {/* Split layout: Photo Frame + Form settings inside inspector */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="inspector-split">
+                        
+                        {/* Certificate picture zoom/visualizer */}
+                        <div className="space-y-2" id="inspector-cert-image-preview">
+                          <span className="block text-xs font-semibold text-slate-500">활동지원사 송부 사진</span>
+                          
+                          <div className="bg-slate-50 border border-slate-200/80 p-2.5 relative flex flex-col items-center justify-center min-h-[200px] overflow-hidden rounded-xl bg-slate-50">
+                            {selectedSubmission.certificateImage ? (
+                              <>
+                                <img
+                                  id="img-inspector-canvas"
+                                  src={selectedSubmission.certificateImage}
+                                  alt="Certificate original file"
+                                  className="max-h-[220px] object-contain mx-auto border border-slate-100 rounded-lg max-w-full"
+                                  referrerPolicy="no-referrer"
+                                />
+                                <button
+                                  id="btn-zoom-inspector-img"
+                                  onClick={() => setZoomedImage(selectedSubmission.certificateImage)}
+                                  className="absolute bottom-2 right-2 bg-slate-900/85 hover:bg-indigo-600 text-white font-medium text-[10px] px-2.5 py-1 transition-all rounded-lg cursor-pointer"
+                                >
+                                  크게보기
+                                </button>
+                              </>
+                            ) : (
+                              <div className="text-xs text-slate-400" id="blank-img-state">사진이 등록되지 않았습니다.</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Review Inputs */}
+                        <div className="space-y-4" id="inspector-interactive-inputs">
+                          <div>
+                            <span className="block text-[10px] text-slate-400 font-bold uppercase">작성 인적사항</span>
+                            <div className="mt-1.5 p-3.5 bg-slate-50 border border-slate-100 rounded-xl grid grid-cols-2 gap-2 text-xs font-medium">
+                              <div>
+                                <span className="text-slate-400 text-[10px] block">성명</span>
+                                <p className="text-slate-800 text-sm font-semibold">{selectedSubmission.assistantName}</p>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 text-[10px] block">생년월일(6자리)</span>
+                                <p className="text-slate-800 text-sm font-mono font-semibold">{selectedSubmission.birthDate}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Editable fields */}
+                          <div className="space-y-3.5" id="verifying-editable-inputs">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                교육과정 과정명 <span className="text-indigo-600">*</span>
+                              </label>
+                              <input
+                                id="admin-course-name"
+                                type="text"
+                                value={courseName || ""}
+                                onChange={(e) => setCourseName(e.target.value)}
+                                placeholder="예: 발달장애인 지원사 보수교육 과정"
+                                className="w-full px-3 py-2 border border-slate-200 bg-slate-50/20 rounded-xl text-xs font-semibold focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-550 transition-colors"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                수강 인정 시간 (시간단위 숫자) <span className="text-indigo-600">*</span>
+                              </label>
+                              <input
+                                id="admin-training-hours"
+                                type="text"
+                                value={trainingHours || ""}
+                                onChange={(e) => setTrainingHours(e.target.value)}
+                                placeholder="인정 교육 시간 수 기입 (예: 4)"
+                                className="w-full px-3 py-2 border border-slate-200 bg-slate-50/20 rounded-xl text-xs font-mono font-semibold focus:bg-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-555 transition-colors"
+                              />
+                              <p className="text-[10px] text-slate-400 mt-1">인정하는 실 수강 시간(숫자)을 정확히 매핑하여 주십시오.</p>
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+
+                      {/* Textarea for note taking */}
+                      <div className="space-y-1.5" id="review-notes-container">
+                        <label className="block text-xs font-semibold text-slate-700">관리자 검토 비고 (메모사항)</label>
+                        <textarea
+                          id="admin-manager-notes"
+                          value={managerNotes || ""}
+                          onChange={(e) => setManagerNotes(e.target.value)}
+                          placeholder="추가적인 확인사항이나 메모사항이 있는 경우 입력해 둡니다."
+                          className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-slate-50/30 focus:bg-white focus:outline-none font-medium h-16 transition-colors"
+                        />
+                      </div>
+
+                      {/* Dynamic Action row */}
+                      <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row justify-between items-center gap-3" id="verifying-action-bar">
+                        
+                        <div className="flex gap-2 w-full sm:w-auto" id="left-actions">
+                          <button
+                            id="btn-action-delete"
+                            onClick={() => handleDelete(selectedSubmission.id)}
+                            className="p-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                            title="제출 영구 삭제"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            <span className="text-xs font-semibold sm:hidden">기록 영구삭제</span>
+                          </button>
+                        </div>
+
+                        <div className="flex gap-2.5 w-full sm:w-auto justify-end" id="main-workflow-actions">
+                          {/* Pending / Temporary Hold */}
+                          <button
+                            id="btn-action-hold"
+                            onClick={() => handleSaveVerification(selectedSubmission.id, false)}
+                            disabled={actionLoading}
+                            className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            임시 보류 / 저장
+                          </button>
+
+                          {/* Completed & Verified */}
+                          <button
+                            id="btn-action-approve"
+                            onClick={() => handleSaveVerification(selectedSubmission.id, true)}
+                            disabled={actionLoading}
+                            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-md hover:shadow-lg hover:shadow-indigo-50 shadow-indigo-100 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <ClipboardCheck className="w-4 h-4" />
+                            교육 수강 완료 확인
+                          </button>
+                        </div>
+
+                      </div>
+
+                    </div>
+                  ) : (
+                    <div className="flex-grow flex flex-col items-center justify-center p-8 text-center" id="inspector-blank-state">
+                      <Award className="w-16 h-16 text-slate-200 mb-2 animate-pulse" />
+                      <h4 className="font-semibold text-xs text-slate-700 tracking-wider">이수 내역 미선택</h4>
+                      <p className="text-xs text-slate-400 mt-1.5 max-w-sm">
+                        상세 수료 파일 분석과 인정 시간 검토를 진행하시려면, 왼쪽 제출 내역 목록에서 대상자를 클릭해 주세요.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+
+      {/* Lightbox zoomed modal */}
+      <AnimatePresence>
+        {zoomedImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setZoomedImage(null)}
+            className="fixed inset-0 z-50 bg-slate-900/90 flex items-center justify-center p-4 cursor-zoom-out backdrop-blur-xs"
+            id="lightbox-panel bg"
+          >
+            <button
+              id="lightbox-close-btn"
+              onClick={() => setZoomedImage(null)}
+              className="absolute top-6 right-6 text-white hover:text-slate-200 p-2.5 bg-slate-800 border border-slate-700 rounded-xl cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="max-w-4xl max-h-[85vh] overflow-hidden"
+              id="lightbox-scroller"
+            >
+              <img
+                id="lightbox-img-large"
+                src={zoomedImage}
+                alt="Detailed Certificate Zoom"
+                className="max-w-full max-h-[85vh] object-contain border border-slate-100 rounded-2xl shadow-2xl"
+                referrerPolicy="no-referrer"
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* App Footer banner design credits */}
+      <footer className="bg-slate-50 border-t border-slate-200/60 py-8 text-center text-xs text-slate-400 font-medium space-y-3 mt-12" id="app-footer">
+        <div className="flex justify-center items-center gap-3">
+          <span>© 2026 온라인 수료증 제출 시스템. All rights reserved.</span>
+          {userMode === "assistant" && (
+            <>
+              <span className="text-slate-300">|</span>
+              <button
+                id="btn-switch-to-admin-small"
+                onClick={() => {
+                  setUserMode("admin");
+                  fetchSubmissions();
+                }}
+                className="text-slate-400 hover:text-indigo-600 transition-colors underline font-medium cursor-pointer"
+              >
+                관리
+              </button>
+            </>
+          )}
+        </div>
+      </footer>
+    </div>
+  );
+}

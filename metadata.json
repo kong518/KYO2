@@ -1,0 +1,6 @@
+{
+  "name": "활동지원사 교육수료증 관리 시스템",
+  "description": "활동지원사들이 온라인 교육 수료증 사진과 본인의 인적사항을 간편하게 제출하고, 전담 사회복지사 및 담당 관리자가 이수 현황을 체계적으로 검토·승인 및 조회·관리할 수 있는 통합 웹 어플리케이션입니다. AI(Gemini)를 통한 수료증 글자 자동 인식(OCR) 기능을 포함하고 있습니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
