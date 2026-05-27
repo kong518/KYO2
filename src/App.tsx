@@ -26,7 +26,8 @@ import {
   Award,
   Lock,
   LogOut,
-  Settings
+  Settings,
+  Printer
 } from "lucide-react";
 import AssistantForm from "./components/AssistantForm";
 import { EducationCertificate, EducationStats } from "./types";
@@ -64,6 +65,7 @@ export default function App() {
 
   // Administrative Control States
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+  const [adminViewMode, setAdminViewMode] = useState<"inspector" | "list">("inspector");
   
   // Verification form states for current selection
   const [courseName, setCourseName] = useState<string>("");
@@ -750,8 +752,42 @@ If no training hours is found, leave it as an empty string.`;
                 </div>
               </div>
 
-              {/* Master-Detail Dual Columns Workdesk */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8" id="admin-work-stage">
+              {/* 대장 보기 및 개별 검토 탭 스위처 */}
+              <div className="flex border-b border-slate-200/85 gap-6 pb-0.5 pt-2" id="admin-view-mode-tabs">
+                <button
+                  type="button"
+                  onClick={() => setAdminViewMode("inspector")}
+                  className={`pb-3.5 text-xs sm:text-xs font-bold transition-all relative flex items-center gap-1.5 cursor-pointer md:px-1 ${
+                    adminViewMode === "inspector"
+                      ? "text-indigo-600 font-bold border-b-2 border-indigo-600"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  <span>개별 수료 대조 및 승인</span>
+                  {stats.pendingCount > 0 && (
+                    <span className="bg-amber-500 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full inline-block min-w-[16px] text-center leading-none">
+                      {stats.pendingCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminViewMode("list")}
+                  className={`pb-3.5 text-xs sm:text-xs font-bold transition-all relative flex items-center gap-1.5 cursor-pointer md:px-1 ${
+                    adminViewMode === "list"
+                      ? "text-indigo-600 font-bold border-b-2 border-indigo-600"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>수료증 제출대장 (전체대장 형식)</span>
+                </button>
+              </div>
+
+              {adminViewMode === "inspector" ? (
+                /* Master-Detail Dual Columns Workdesk */
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8" id="admin-work-stage">
                 
                 {/* LEFT CONTEXT PANEL: Search, Filter & List of submissions */}
                 <div className="lg:col-span-5 bg-white border border-slate-205/85 p-5 rounded-2xl shadow-sm flex flex-col min-h-[500px]" id="submissions-list-pane">
@@ -939,53 +975,30 @@ If no training hours is found, leave it as an empty string.`;
                             </div>
                           </div>
 
-                          {/* AI 수료 자동 추출 서비스 */}
-                          <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2.5" id="ai-extractor-panel">
+                          {/* 활동지원사 등록 정보 (AI 자동 추출 및 직접 기재 완료본 확인) */}
+                          <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2.5" id="ai-extractor-panel-cleaned">
                             <div className="flex items-center justify-between">
-                              <span className="text-[10px] text-indigo-700 font-bold flex items-center gap-1">
-                                <Sparkles className="w-3 h-3 text-indigo-500" />
-                                AI 수료 정보 추출 및 인적 불일치 검증
+                              <span className="text-[11px] text-slate-700 font-bold flex items-center gap-1">
+                                <Award className="w-3.5 h-3.5 text-indigo-500" />
+                                제출정보 검증 및 확인서 발급
                               </span>
+                              {selectedSubmission.isCompleted && (
+                                <button
+                                  type="button"
+                                  onClick={() => window.print()}
+                                  className="text-[10px] font-bold px-2 py-1 bg-white border border-indigo-200 hover:bg-slate-50 text-indigo-700 hover:text-indigo-850 rounded-lg transition-all cursor-pointer flex items-center gap-1 font-sans"
+                                  title="이수확인서 1장 개별 출력"
+                                >
+                                  <Printer className="w-3 h-3 text-indigo-500" />
+                                  <span>확인서 인쇄</span>
+                                </button>
+                              )}
                             </div>
-                            <button
-                              id="btn-ai-analyze"
-                              type="button"
-                              onClick={() => handleAiOcrAnalysis(
-                                selectedSubmission.certificateImage,
-                                selectedSubmission.assistantName,
-                                selectedSubmission.birthDate
-                              )}
-                              disabled={aiAnalysisLoading || !selectedSubmission.certificateImage}
-                              className={`w-full flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                                aiAnalysisLoading
-                                  ? "bg-indigo-100 text-indigo-400"
-                                  : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs"
-                              }`}
-                            >
-                              {aiAnalysisLoading ? (
-                                <>
-                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                  <span>AI가 수료증 분석 중...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Sparkles className="w-3.5 h-3.5" />
-                                  <span>AI 수료증 분석 및 자동 입력</span>
-                                </>
-                              )}
-                            </button>
                             
-                            {aiFeedback && (
-                              <div className={`p-2.5 rounded-lg text-[11px] whitespace-pre-line font-medium leading-relaxed ${
-                                aiFeedback.type === "success"
-                                  ? "bg-emerald-50 text-emerald-800 border border-emerald-100"
-                                  : aiFeedback.type === "mismatch"
-                                  ? "bg-amber-50 text-amber-800 border border-amber-200"
-                                  : "bg-rose-50 text-rose-800 border border-rose-100"
-                              }`}>
-                                {aiFeedback.message}
-                              </div>
-                            )}
+                            <div className="text-[11px] leading-relaxed text-slate-500 space-y-1 bg-white p-2.5 rounded-lg border border-slate-100">
+                              <p>활동지원사가 수료증 제출 시 작성(혹은 제출 단계의 AI 사전 분석)한 이수 내역입니다.</p>
+                              <p>왼쪽의 실제 수료증 이미지/PDF 파일과 대조하신 후 정상이면 아래의 과정 및 시간을 승인해 주십시오.</p>
+                            </div>
                           </div>
 
                           {/* Editable fields */}
@@ -1088,6 +1101,175 @@ If no training hours is found, leave it as an empty string.`;
                 </div>
 
               </div>
+              ) : (
+                /* Ledger Table list layout (수료증 제출대장 전체보기) */
+                <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 space-y-5" id="ledger-table-view">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800 font-sans">장애인활동지원 온라인 교육 수료대장</h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5 font-sans">
+                        검색 및 정렬 필터가 활성화된 대수 {filteredSubmissions.length}건이 리포트 테이블로 집계되었습니다.
+                      </p>
+                    </div>
+                    
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                      {/* 테이블 검색 인풋 */}
+                      <div className="relative flex-1 sm:flex-initial">
+                        <span className="absolute left-3 top-2.5 text-slate-400">
+                          <Search className="w-3.5 h-3.5" />
+                        </span>
+                        <input
+                          id="admin-table-search-text"
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="성명, 생년월일 또는 교육과정 검색..."
+                          className="w-full sm:w-60 pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-slate-50/20 focus:bg-white focus:outline-none transition-colors font-sans"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 border border-slate-900 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs font-sans"
+                        title="대장 양식으로 전체 데이터 출력"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>대장 인쇄</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter tabs inside desk ledger */}
+                  <div className="flex flex-wrap gap-1" id="ledger-filter-pills">
+                    <button
+                      type="button"
+                      onClick={() => setSubFilter("all")}
+                      className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                        subFilter === "all"
+                          ? "bg-slate-800 border-slate-800 text-white"
+                          : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      전체 ({submissions.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubFilter("pending")}
+                      className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                        subFilter === "pending"
+                          ? "bg-amber-600 border-amber-500 text-white"
+                          : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
+                      }`}
+                    >
+                      검토대기 ({submissions.filter(s => !s.isCompleted).length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubFilter("completed")}
+                      className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                        subFilter === "completed"
+                          ? "bg-emerald-600 border-emerald-500 text-white"
+                          : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
+                      }`}
+                    >
+                      이수완료 ({submissions.filter(s => s.isCompleted).length})
+                    </button>
+                  </div>
+
+                  {/* Table area */}
+                  <div className="block w-full overflow-x-auto border border-slate-150 rounded-xl bg-white shadow-2xs" id="ledger-table-container">
+                    <table className="w-full text-left border-collapse" id="ledger-table-element">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200/80 text-[10px] font-bold text-slate-505 uppercase tracking-wider text-slate-500">
+                          <th className="px-4 py-3 text-center w-12">No</th>
+                          <th className="px-4 py-3">성명</th>
+                          <th className="px-4 py-3">생년월일</th>
+                          <th className="px-4 py-3">이수 교육과정명</th>
+                          <th className="px-4 py-3 text-center w-28">인정 시간</th>
+                          <th className="px-4 py-3 text-center font-sans">제출일자</th>
+                          <th className="px-4 py-3 text-center w-28">이수상태</th>
+                          <th className="px-4 py-3">검토메모</th>
+                          <th className="px-4 py-3 text-center w-36">이수작성</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs font-medium">
+                        {filteredSubmissions.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="px-4 py-16 text-center text-slate-400 font-semibold bg-slate-50/50">
+                              조건에 합치되는 제출 수료 기록이 리스트에 존재하지 않습니다.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredSubmissions.map((sub, idx) => (
+                            <tr key={sub.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-4 py-3.5 text-center font-mono text-slate-400">{idx + 1}</td>
+                              <td className="px-4 py-3.5 font-bold text-slate-800">{sub.assistantName}</td>
+                              <td className="px-4 py-3.5 font-mono text-slate-500">{sub.birthDate}</td>
+                              <td className="px-4 py-3.5 text-slate-600 max-w-xs truncate" title={sub.courseName || '과정명 미지정'}>
+                                {sub.courseName || <span className="text-slate-300 italic">과정명 미지정</span>}
+                              </td>
+                              <td className="px-4 py-3.5 text-center font-mono font-bold text-indigo-600 text-sm">
+                                {sub.trainingHours ? `${sub.trainingHours}시간` : <span className="text-slate-300 font-normal">미입력</span>}
+                              </td>
+                              <td className="px-4 py-3.5 text-center text-slate-400 font-mono">
+                                {new Date(sub.submittedAt).toLocaleDateString()}
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                {sub.isCompleted ? (
+                                  <span className="px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold rounded-full">
+                                    이수 완료
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold rounded-full">
+                                    검토 대기
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3.5 text-slate-400 max-w-[150px] truncate" title={sub.managerNotes || ''}>
+                                {sub.managerNotes || <span className="text-slate-300 italic">-</span>}
+                              </td>
+                              <td className="px-4 py-3.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setAdminViewMode("inspector");
+                                      handleSelectItem(sub);
+                                    }}
+                                    className="px-2.5 py-1 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center gap-0.5"
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                    <span>검토</span>
+                                  </button>
+                                  {sub.isCompleted && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedSubmissionId(sub.id);
+                                        setCourseName(sub.courseName || "");
+                                        setTrainingHours(sub.trainingHours || "");
+                                        setManagerNotes(sub.managerNotes || "");
+                                        setTimeout(() => {
+                                          window.print();
+                                        }, 100);
+                                      }}
+                                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold rounded-lg text-[10px] cursor-pointer transition-all flex items-center gap-0.5"
+                                    >
+                                      <Printer className="w-3 h-3" />
+                                      <span>인쇄</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -1232,6 +1414,124 @@ If no training hours is found, leave it as an empty string.`;
           )}
         </div>
       </footer>
+
+      {/* ──────────────────────────────────────────────
+          PRINTER PRINTING SHEET (HIDDEN ON SCREEN, ONLY FOR PRINT)
+          ────────────────────────────────────────────── */}
+      <div className="hidden print:block font-sans min-h-screen text-slate-900 bg-white" id="printing-sheet">
+        
+        {/* CASE A: Ledger table print (If view mode is list) */}
+        {adminViewMode === "list" && (
+          <div className="p-8 w-full block">
+            <h1 className="text-xl font-bold text-center mb-1 text-slate-900 font-sans tracking-tight">장애인활동지원 온라인 교육 수료대장 완료자 명단</h1>
+            <p className="text-center text-[10px] text-slate-500 mb-6 font-mono">출력 일자: {new Date().toLocaleDateString()} / 수원시장애인종합복지관 (활동지원사업본부)</p>
+            
+            <table className="w-full text-xs border-collapse border border-slate-300">
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-300 text-[10px] font-bold text-slate-700">
+                  <th className="border border-slate-300 px-2 py-1.5 text-center w-12">No</th>
+                  <th className="border border-slate-300 px-3 py-1.5 text-left w-24">지원사 성명</th>
+                  <th className="border border-slate-300 px-3 py-1.5 text-center w-24">생년월일</th>
+                  <th className="border border-slate-300 px-3 py-1.5 text-left">이수 교육과정명</th>
+                  <th className="border border-slate-300 px-3 py-1.5 text-center w-20">인정 시간</th>
+                  <th className="border border-slate-300 px-3 py-1.5 text-center w-24">제출 일자</th>
+                  <th className="border border-slate-300 px-3 py-1.5 text-left w-40">비고 및 확인자 검토사항</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSubmissions.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="border border-slate-300 px-3 py-8 text-center text-slate-400 font-sans">
+                      수료 대장 리스트 데이터가 존재하지 않습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredSubmissions.map((sub, index) => (
+                    <tr key={sub.id} className="text-[10px] font-sans">
+                      <td className="border border-slate-300 px-2 py-1.5 text-center font-mono">{index + 1}</td>
+                      <td className="border border-slate-300 px-3 py-1.5 font-bold text-slate-900">{sub.assistantName}</td>
+                      <td className="border border-slate-300 px-3 py-1.5 text-center font-mono text-slate-600">{sub.birthDate}</td>
+                      <td className="border border-slate-300 px-3 py-1.5 text-slate-850 font-bold">{sub.courseName || "보수교육"}</td>
+                      <td className="border border-slate-300 px-3 py-1.5 text-center font-mono font-bold">{sub.trainingHours ? `${sub.trainingHours}시간` : "-"}</td>
+                      <td className="border border-slate-300 px-3 py-1.5 text-center font-mono text-slate-500">{sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : "-"}</td>
+                      <td className="border border-slate-300 px-3 py-1.5 text-slate-500">{sub.managerNotes || "-"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            
+            <div className="mt-8 flex justify-between text-[11px] font-semibold text-slate-700 px-2 font-sans">
+              <span>총 누적 건수: {filteredSubmissions.length} 건</span>
+              <span>수합 대장 원본 확인필 (서명) __________________</span>
+            </div>
+          </div>
+        )}
+
+        {/* CASE B: Individual Certificate Confirmation print */}
+        {selectedSubmission && (
+          <div className="p-12 w-[650px] mx-auto border-8 border-indigo-950/80 my-12 bg-white text-center flex flex-col justify-between min-h-[85vh] relative" id="individual-certificate-frame">
+            {/* Watermark circle representation */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.05] pointer-events-none">
+              <Award className="w-[280px] h-[280px] text-slate-900" />
+            </div>
+
+            <div className="space-y-8">
+              <div className="space-y-2">
+                <span className="text-[11px] font-mono tracking-widest text-indigo-800 uppercase block font-semibold">장애인활동지원 온라인 교육 수료증</span>
+                <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight font-sans underline underline-offset-8">교 육 이 수 확 인 서</h1>
+                <span className="text-[9px] font-mono text-slate-400 block pt-1.5">제출 고유번호: No. {selectedSubmission.id.toUpperCase()}</span>
+              </div>
+
+              {/* Recipient meta table inside individual print */}
+              <div className="my-10 border-t-2 border-b-2 border-slate-800 py-6 max-w-md mx-auto text-left space-y-4 font-sans text-sm">
+                <div className="flex">
+                  <span className="w-24 text-slate-500 font-bold block">이 수 자 성 명</span>
+                  <span className="flex-1 font-extrabold text-slate-900 border-b border-slate-200 pb-1 text-base">{selectedSubmission.assistantName}</span>
+                </div>
+                <div className="flex">
+                  <span className="w-24 text-slate-500 font-bold block">생 년 월 일</span>
+                  <span className="flex-1 font-bold text-slate-800 border-b border-slate-200 pb-1 font-mono">
+                    {selectedSubmission.birthDate.slice(0, 2)}년 {selectedSubmission.birthDate.slice(2, 4)}월 {selectedSubmission.birthDate.slice(4, 6)}일생
+                  </span>
+                </div>
+                <div className="flex">
+                  <span className="w-24 text-slate-500 font-bold block">이 수 과 정 명</span>
+                  <span className="flex-1 font-bold text-indigo-950/90 border-b border-slate-200 pb-1 text-sm">{selectedSubmission.courseName || "장애인활동지원 정기 보수교육 과정"}</span>
+                </div>
+                <div className="flex">
+                  <span className="w-24 text-slate-500 font-bold block">인정 교육시간</span>
+                  <span className="flex-1 font-extrabold text-slate-900 border-b border-slate-200 pb-1 font-mono text-lg">{selectedSubmission.trainingHours || "0"} 시간</span>
+                </div>
+                <div className="flex">
+                  <span className="w-24 text-slate-500 font-bold block">수 료 일 자</span>
+                  <span className="flex-1 font-bold text-slate-700 border-b border-slate-200 pb-1">{new Date(selectedSubmission.submittedAt).toLocaleDateString()} (제출 수합)</span>
+                </div>
+              </div>
+
+              {/* Swear context */}
+              <div className="px-6 py-6 text-[13px] text-slate-700 leading-relaxed font-sans max-w-lg mx-auto whitespace-pre-wrap font-bold">
+                {"위 활동지원사는 관련 교육 훈련 요강에 의거하여\n본 수료 교육과정을 성실히 수강하고 검토 기준에 상응하는 교육 이수를 성료하였음을 이에 공식 증명합니다."}
+              </div>
+            </div>
+
+            <div className="pt-10 space-y-4">
+              <p className="text-sm font-bold text-slate-800 leading-relaxed font-mono">
+                {new Date().toLocaleDateString()}
+              </p>
+              
+              <div className="flex justify-center items-center gap-2 mt-2">
+                <span className="text-lg font-extrabold text-slate-950 font-sans tracking-wide">수원시장애인종합복지관 귀하</span>
+                <span className="w-12 h-12 rounded-full border-4 border-rose-650 rotate-6 border-rose-600/70 text-[9px] font-extrabold text-rose-600/90 flex items-center justify-center flex-col uppercase select-none leading-none border-double font-serif scale-95 shrink-0">
+                  <span>복지관</span>
+                  <span>직인생략</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
     </div>
   );
 }
