@@ -115,12 +115,18 @@ export default function App() {
         setCourseName(data.courseName || "");
         setTrainingHours(data.trainingHours || "");
         setManagerNotes(data.managerNotes || "");
-        return true;
+        return { success: true };
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          error: errorData.error || `서버 오류 (상태 코드: ${res.status})`
+        };
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to submit certificate:", error);
+      return { success: false, error: error.message || "네트워크 연결 요류가 발생했습니다." };
     }
-    return false;
   };
 
   // Handles updating the training metadata and completion state 

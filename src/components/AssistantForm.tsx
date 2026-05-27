@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 interface AssistantFormProps {
-  onNewSubmission: (submission: { assistantName: string; birthDate: string; certificateImage: string }) => Promise<boolean>;
+  onNewSubmission: (submission: { assistantName: string; birthDate: string; certificateImage: string }) => Promise<{ success: boolean; error?: string }>;
 }
 
 export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
@@ -33,6 +33,43 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Client-side image compression to downscale high-resolution mobile photos (prevents Payload Too Large / HTTP 413)
+  const compressImage = (base64Str: string, maxW = 1600, maxH = 1600): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxW || height > maxH) {
+          if (width > height) {
+            height = Math.round((height * maxW) / width);
+            width = maxW;
+          } else {
+            width = Math.round((width * maxH) / height);
+            height = maxH;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        } else {
+          resolve(base64Str);
+        }
+      };
+      img.onerror = () => {
+        resolve(base64Str);
+      };
+      img.src = base64Str;
+    });
+  };
+
   // Raw file to base64 converter
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -48,9 +85,12 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const base64String = event.target?.result as string;
-      setImagePreview(base64String);
+      
+      // Perform client-side compression to keep the request size extremely small
+      const compressedString = await compressImage(base64String);
+      setImagePreview(compressedString);
       setOcrSuccess(false);
       setOcrError(null);
     };
@@ -103,7 +143,7 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
       if (data.birthDate) setBirthDate(data.birthDate);
 
       setOcrSuccess(true);
-      setTimeout(() => setOcrSuccess(false), 4000);
+      setTimeout(() => setOcrSuccess(false), 4500);
     } catch (err: any) {
       console.error(err);
       setOcrError(err.message || '수료증 이미지 분석에 실패했습니다. 직접 성함과 생년월일을 입력해주시기 바랍니다.');
@@ -131,20 +171,20 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
     setSubmitError(null);
 
     try {
-      const success = await onNewSubmission({
+      const result = await onNewSubmission({
         assistantName,
         birthDate,
         certificateImage: imagePreview,
       });
 
-      if (success) {
+      if (result.success) {
         setSubmitSuccess(true);
         // Clean fields
         setAssistantName('');
         setBirthDate('');
         setImagePreview(null);
       } else {
-        setSubmitError('수료증 등록 서버 저장에 실패했습니다. 잠시 후 다시 시도해주세요.');
+        setSubmitError(result.error || '수료증 등록 서버 저장에 실패했습니다. 잠시 후 다시 시도해주세요.');
       }
     } catch (err: any) {
       setSubmitError(err.message || '서버 통신 실패');
