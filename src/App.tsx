@@ -698,18 +698,35 @@ If no training hours is found, leave it as an empty string.`;
                           return isNaN(num) ? sum : sum + num;
                         }, 0);
 
+                      // Exactly matches column structure:
+                      // A: 지원사 성명 | B: 생년월일 | C: 이수상태 | D: 승인 교육시간(시간) | E: 이수 교육과정명 | F: 제출 일시 | G: [Empty] | H: 총 완료 건수 / 총 이수 누적시간
                       const rows = [
-                        ["장애인활동지원 온라인 교육 수료대장 완료자 명단"],
-                        [`출력 일자: ${new Date().toLocaleDateString()}`, "수원시장애인종합복지관 (활동지원사업본부)"],
-                        [`총 완료 건수: ${totalCompleted}건`, `총 이수 누적시간: ${totalHoursSum}시간`],
-                        [], // Blank divider
-                        ["제출고유ID", "지원사 성명", "생년월일", "이수상태", "승인 교육시간(시간)", "이수 교육과정명", "제출 일시", "검토참고사항"],
-                        ...submissions.map((s) => [
-                          s.id, s.assistantName, s.birthDate, s.isCompleted ? "이수완료" : "검토대기", s.trainingHours || "0", s.courseName || "미입력", s.submittedAt, s.managerNotes || ""
-                        ]),
-                        [], // Blank divider
-                        ["[합계 요약]", "이수완료 총 건수", `${totalCompleted}건`, "총 누적 교육시간", `${totalHoursSum}시간`, "수합 대장 원본 확인필", "", ""]
+                        ["장애인활동지원 온라인 교육 수료대장 완료자 명단", "", "", "", "", "", "", ""],
+                        ["지원사 성명", "생년월일", "이수상태", "승인 교육시간(시간)", "이수 교육과정명", "제출 일시", "", "총 완료 건수: " + totalCompleted + "건"]
                       ];
+
+                      submissions.forEach((s, idx) => {
+                        const sideSummary = idx === 0 
+                          ? "총 이수 누적시간: " + totalHoursSum + "시간" 
+                          : "";
+                        const dur = s.trainingHours ? (s.trainingHours.endsWith("시간") ? s.trainingHours : `${s.trainingHours}시간`) : "0시간";
+                        
+                        rows.push([
+                          s.assistantName,
+                          s.birthDate,
+                          s.isCompleted ? "이수완료" : "검토대기",
+                          dur,
+                          s.courseName || "미입력",
+                          s.submittedAt,
+                          "",
+                          sideSummary
+                        ]);
+                      });
+
+                      // If list is empty
+                      if (submissions.length === 0) {
+                        rows.push(["", "", "", "", "", "", "", "총 이수 누적시간: " + totalHoursSum + "시간"]);
+                      }
 
                       const csvContent = rows.map(r => r.map(escapeCsv).join(",")).join("\n");
                       
@@ -996,31 +1013,7 @@ If no training hours is found, leave it as an empty string.`;
                             </div>
                           </div>
 
-                          {/* 활동지원사 등록 정보 (AI 자동 추출 및 직접 기재 완료본 확인) */}
-                          <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2.5" id="ai-extractor-panel-cleaned">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] text-slate-700 font-bold flex items-center gap-1">
-                                <Award className="w-3.5 h-3.5 text-indigo-500" />
-                                제출정보 검증 및 확인서 발급
-                              </span>
-                              {selectedSubmission.isCompleted && (
-                                <button
-                                  type="button"
-                                  onClick={() => window.print()}
-                                  className="text-[10px] font-bold px-2 py-1 bg-white border border-indigo-200 hover:bg-slate-50 text-indigo-700 hover:text-indigo-850 rounded-lg transition-all cursor-pointer flex items-center gap-1 font-sans"
-                                  title="이수확인서 1장 개별 출력"
-                                >
-                                  <Printer className="w-3 h-3 text-indigo-500" />
-                                  <span>확인서 인쇄</span>
-                                </button>
-                              )}
-                            </div>
-                            
-                            <div className="text-[11px] leading-relaxed text-slate-500 space-y-1 bg-white p-2.5 rounded-lg border border-slate-100">
-                              <p>활동지원사가 수료증 제출 시 작성(혹은 제출 단계의 AI 사전 분석)한 이수 내역입니다.</p>
-                              <p>왼쪽의 실제 수료증 이미지/PDF 파일과 대조하신 후 정상이면 아래의 과정 및 시간을 승인해 주십시오.</p>
-                            </div>
-                          </div>
+
 
                           {/* Editable fields */}
                           <div className="space-y-3.5" id="verifying-editable-inputs">
@@ -1464,19 +1457,18 @@ If no training hours is found, leave it as an empty string.`;
           <table className="w-full text-xs border-collapse border border-slate-350">
             <thead>
               <tr className="bg-slate-100 border-b border-slate-350 text-[10px] font-bold text-slate-800 tracking-wide uppercase">
-                <th className="border border-slate-350 px-2.5 py-2 text-center w-12">No</th>
-                <th className="border border-slate-350 px-3.5 py-2 text-left w-28">지원사 성명</th>
-                <th className="border border-slate-300/90 px-3.5 py-2 text-center w-28">생년월일</th>
+                <th className="border border-slate-350 px-2 py-2 text-center w-10 whitespace-nowrap">No</th>
+                <th className="border border-slate-350 px-2.5 py-2 text-left w-[85px] whitespace-nowrap">지원사 성명</th>
+                <th className="border border-slate-350 px-2.5 py-2 text-center w-[90px] whitespace-nowrap">생년월일</th>
                 <th className="border border-slate-350 px-3.5 py-2 text-left">이수 교육과정명</th>
-                <th className="border border-slate-350 px-3 py-2 text-center w-24">인정 시간</th>
-                <th className="border border-slate-350 px-3 py-2 text-center w-28">제출(수합)일자</th>
-                <th className="border border-slate-350 px-3.5 py-2 text-left w-48">비고 및 확인자 메모</th>
+                <th className="border border-slate-350 px-3 py-2 text-center w-[80px] whitespace-nowrap">인정 시간</th>
+                <th className="border border-slate-350 px-3 py-2 text-center w-[110px] whitespace-nowrap">제출(수합)일자</th>
               </tr>
             </thead>
             <tbody>
               {filteredSubmissions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="border border-slate-350 px-3 py-16 text-center text-slate-400 font-sans">
+                  <td colSpan={6} className="border border-slate-350 px-3 py-16 text-center text-slate-400 font-sans">
                     출력할 수 있는 내역이 없습니다.
                   </td>
                 </tr>
@@ -1484,32 +1476,28 @@ If no training hours is found, leave it as an empty string.`;
                 <>
                   {filteredSubmissions.map((sub, index) => (
                     <tr key={sub.id} className="text-[11px] font-sans hover:bg-slate-50/20 animate-none">
-                      <td className="border border-slate-350 px-2.5 py-1.5 text-center font-mono text-slate-500">{index + 1}</td>
-                      <td className="border border-slate-350 px-3.5 py-1.5 font-bold text-slate-900 text-[11.5px]">{sub.assistantName}</td>
-                      <td className="border border-slate-350 px-3.5 py-1.5 text-center font-mono text-slate-600">{sub.birthDate}</td>
-                      <td className="border border-slate-350 px-3.5 py-1.5 text-slate-800 font-medium">{sub.courseName || "확인중"}</td>
-                      <td className="border border-slate-350 px-3 py-1.5 text-center font-mono font-bold text-slate-850">
+                      <td className="border border-slate-350 px-2 py-1.5 text-center font-mono text-slate-500 whitespace-nowrap">{index + 1}</td>
+                      <td className="border border-slate-350 px-2.5 py-1.5 font-bold text-slate-900 text-[11px] whitespace-nowrap">{sub.assistantName}</td>
+                      <td className="border border-slate-350 px-2.5 py-1.5 text-center font-mono text-slate-600 whitespace-nowrap">{sub.birthDate}</td>
+                      <td className="border border-slate-350 px-3.5 py-1.5 text-slate-800 font-medium text-[11px] leading-normal">{sub.courseName || "확인중"}</td>
+                      <td className="border border-slate-350 px-3 py-1.5 text-center font-mono font-bold text-slate-850 whitespace-nowrap">
                         {sub.trainingHours ? `${sub.trainingHours}시간` : "-"}
                       </td>
-                      <td className="border border-slate-350 px-3 py-1.5 text-center font-mono text-slate-500">
+                      <td className="border border-slate-350 px-3 py-1.5 text-center font-mono text-slate-500 whitespace-nowrap">
                         {sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : "-"}
-                      </td>
-                      <td className="border border-slate-350 px-3.5 py-1.5 text-slate-500">
-                        {sub.isCompleted ? (
-                          sub.managerNotes || "이수 확인완료"
-                        ) : (
-                          <span className="text-amber-700 font-semibold">[검토대기] {sub.managerNotes || "-"}</span>
-                        )}
                       </td>
                     </tr>
                   ))}
                   
                   {/* Ledger summary totals row */}
                   <tr className="bg-slate-50 font-bold text-xs">
-                    <td colSpan={4} className="border border-slate-350 px-3.5 py-2.5 text-center text-slate-700">
+                    <td colSpan={3} className="border border-slate-350 px-3.5 py-2.5 text-center text-slate-700">
                       합계 (이수완료 전체 누적 교육시간)
                     </td>
-                    <td className="border border-slate-350 px-3 py-2.5 text-center text-indigo-700 font-extrabold text-sm font-mono">
+                    <td className="border border-slate-350 px-3.5 py-2.5 text-left text-slate-600 font-sans text-[10px]">
+                      완료 {filteredSubmissions.filter(s => s.isCompleted).length}건 / 대기 {filteredSubmissions.filter(s => !s.isCompleted).length}건
+                    </td>
+                    <td className="border border-slate-350 px-3 py-2.5 text-center text-indigo-700 font-extrabold text-sm font-mono whitespace-nowrap">
                       {filteredSubmissions
                         .filter((s) => s.isCompleted && s.trainingHours)
                         .reduce((sum, s) => {
@@ -1517,19 +1505,16 @@ If no training hours is found, leave it as an empty string.`;
                           return isNaN(num) ? sum : sum + num;
                         }, 0)}시간
                     </td>
-                    <td colSpan={2} className="border border-slate-350 px-3.5 py-2.5 text-right text-slate-600 font-sans">
-                      완료 {filteredSubmissions.filter(s => s.isCompleted).length}건 / 대기 {filteredSubmissions.filter(s => !s.isCompleted).length}건
-                    </td>
+                    <td className="border border-slate-350 px-3 py-2.5 bg-slate-50"></td>
                   </tr>
                 </>
               )}
             </tbody>
           </table>
           
-          {/* Signatures part */}
-          <div className="mt-12 flex justify-between items-center text-xs font-semibold text-slate-700 px-2 font-sans border-t border-slate-200 pt-6">
-            <span>수원시장애인종합복지관 - 교육 수집 및 검토 대장 명단</span>
-            <span className="text-right">수합 대장 원본 확인필 (서명) : ________________________</span>
+          {/* Footer part */}
+          <div className="mt-12 text-center text-xs font-semibold text-slate-400 font-sans border-t border-slate-100 pt-6">
+            수원시장애인종합복지관
           </div>
         </div>
       </div>
