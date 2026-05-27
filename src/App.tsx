@@ -1229,7 +1229,7 @@ If no training hours is found, leave it as an empty string.`;
                                 {sub.courseName || <span className="text-slate-300 italic">과정명 미지정</span>}
                               </td>
                               <td className="px-4 py-3.5 text-center font-mono font-bold text-indigo-600 text-sm">
-                                {sub.trainingHours ? `${sub.trainingHours}시간` : <span className="text-slate-300 font-normal">미입력</span>}
+                                {sub.trainingHours ? (sub.trainingHours.includes("시간") ? sub.trainingHours : `${sub.trainingHours}시간`) : <span className="text-slate-300 font-normal">미입력</span>}
                               </td>
                               <td className="px-4 py-3.5 text-center text-slate-400 font-mono">
                                 {new Date(sub.submittedAt).toLocaleDateString()}
@@ -1481,7 +1481,7 @@ If no training hours is found, leave it as an empty string.`;
                       <td className="border border-slate-350 px-2.5 py-1.5 text-center font-mono text-slate-600 whitespace-nowrap">{sub.birthDate}</td>
                       <td className="border border-slate-350 px-3.5 py-1.5 text-slate-800 font-medium text-[11px] leading-normal">{sub.courseName || "확인중"}</td>
                       <td className="border border-slate-350 px-3 py-1.5 text-center font-mono font-bold text-slate-850 whitespace-nowrap">
-                        {sub.trainingHours ? `${sub.trainingHours}시간` : "-"}
+                        {sub.trainingHours ? (sub.trainingHours.includes("시간") ? sub.trainingHours : `${sub.trainingHours}시간`) : "-"}
                       </td>
                       <td className="border border-slate-350 px-3 py-1.5 text-center font-mono text-slate-500 whitespace-nowrap">
                         {sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : "-"}
@@ -1492,7 +1492,7 @@ If no training hours is found, leave it as an empty string.`;
                   {/* Ledger summary totals row */}
                   <tr className="bg-slate-50 font-bold text-xs">
                     <td colSpan={3} className="border border-slate-350 px-3.5 py-2.5 text-center text-slate-700">
-                      합계 (이수완료 전체 누적 교육시간)
+                      합계
                     </td>
                     <td className="border border-slate-350 px-3.5 py-2.5 text-left text-slate-600 font-sans text-[10px]">
                       완료 {filteredSubmissions.filter(s => s.isCompleted).length}건 / 대기 {filteredSubmissions.filter(s => !s.isCompleted).length}건
