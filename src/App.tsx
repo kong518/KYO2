@@ -1408,7 +1408,7 @@ If no training hours is found, leave it as an empty string.`;
           {/* Header section designed beautifully for printed reports */}
           <div className="text-center pb-6 border-b-2 border-slate-850 mb-6">
             <h1 className="text-2xl font-bold tracking-tight font-sans text-slate-900">장애인활동지원 온라인 교육 수료대장</h1>
-            <p className="text-[10px] text-slate-500 mt-1 font-mono">수원시장애인종합복지관 (활동지원사업본부) | 출력 일자: {new Date().toLocaleDateString()}</p>
+            <p className="text-[10px] text-slate-500 mt-1 font-mono">수원시장애인종합복지관 | 출력 일자: {new Date().toLocaleDateString()}</p>
           </div>
           
           {/* Aggregate summary fact blocks printed neat and clean */}
