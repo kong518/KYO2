@@ -201,7 +201,13 @@ export default function App() {
     }
   };
 
-  const handleNewSubmission = async (newSub: { assistantName: string; birthDate: string; certificateImage: string }) => {
+  const handleNewSubmission = async (newSub: { 
+    assistantName: string; 
+    birthDate: string; 
+    certificateImage: string;
+    courseName?: string;
+    trainingHours?: string;
+  }) => {
     try {
       const submitData = {
         assistantName: newSub.assistantName,
@@ -209,8 +215,8 @@ export default function App() {
         certificateImage: newSub.certificateImage,
         submittedAt: new Date().toISOString(),
         isCompleted: false,
-        trainingHours: "",
-        courseName: "",
+        trainingHours: newSub.trainingHours || "",
+        courseName: newSub.courseName || "",
         managerNotes: "",
       };
 
@@ -883,18 +889,26 @@ If no training hours is found, leave it as an empty string.`;
                         
                         {/* Certificate picture zoom/visualizer */}
                         <div className="space-y-2" id="inspector-cert-image-preview">
-                          <span className="block text-xs font-semibold text-slate-500">활동지원사 송부 사진</span>
+                          <span className="block text-xs font-semibold text-slate-500">활동지원사 송부 수료 문서</span>
                           
-                          <div className="bg-slate-50 border border-slate-200/80 p-2.5 relative flex flex-col items-center justify-center min-h-[200px] overflow-hidden rounded-xl bg-slate-50">
+                          <div className="bg-slate-50 border border-slate-200/80 p-2.5 relative flex flex-col items-center justify-center min-h-[225px] overflow-hidden rounded-xl bg-slate-50">
                             {selectedSubmission.certificateImage ? (
                               <>
-                                <img
-                                  id="img-inspector-canvas"
-                                  src={selectedSubmission.certificateImage}
-                                  alt="Certificate original file"
-                                  className="max-h-[220px] object-contain mx-auto border border-slate-100 rounded-lg max-w-full"
-                                  referrerPolicy="no-referrer"
-                                />
+                                {selectedSubmission.certificateImage.startsWith("data:application/pdf") ? (
+                                  <iframe
+                                    src={selectedSubmission.certificateImage}
+                                    className="w-full h-[220px] rounded-lg border border-slate-150 bg-white"
+                                    title="PDF 수료증 미리보기"
+                                  />
+                                ) : (
+                                  <img
+                                    id="img-inspector-canvas"
+                                    src={selectedSubmission.certificateImage}
+                                    alt="Certificate original file"
+                                    className="max-h-[220px] object-contain mx-auto border border-slate-100 rounded-lg max-w-full"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                )}
                                 <button
                                   id="btn-zoom-inspector-img"
                                   onClick={() => setZoomedImage(selectedSubmission.certificateImage)}
@@ -904,7 +918,7 @@ If no training hours is found, leave it as an empty string.`;
                                 </button>
                               </>
                             ) : (
-                              <div className="text-xs text-slate-400" id="blank-img-state">사진이 등록되지 않았습니다.</div>
+                              <div className="text-xs text-slate-400" id="blank-img-state">수료증이 등록되지 않았습니다.</div>
                             )}
                           </div>
                         </div>
@@ -1104,13 +1118,21 @@ If no training hours is found, leave it as an empty string.`;
               className="max-w-4xl max-h-[85vh] overflow-hidden"
               id="lightbox-scroller"
             >
-              <img
-                id="lightbox-img-large"
-                src={zoomedImage}
-                alt="Detailed Certificate Zoom"
-                className="max-w-full max-h-[85vh] object-contain border border-slate-100 rounded-2xl shadow-2xl"
-                referrerPolicy="no-referrer"
-              />
+              {zoomedImage.startsWith("data:application/pdf") ? (
+                <iframe
+                  src={zoomedImage}
+                  className="w-[85vw] h-[80vh] rounded-2xl border border-slate-700 bg-white shadow-2xl"
+                  title="수료증 상세 보기"
+                />
+              ) : (
+                <img
+                  id="lightbox-img-large"
+                  src={zoomedImage}
+                  alt="Detailed Certificate Zoom"
+                  className="max-w-full max-h-[85vh] object-contain border border-slate-100 rounded-2xl shadow-2xl"
+                  referrerPolicy="no-referrer"
+                />
+              )}
             </motion.div>
           </motion.div>
         )}
