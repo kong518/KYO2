@@ -66,7 +66,8 @@ export default function App() {
 
   // Administrative Control States
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
-  const [adminViewMode, setAdminViewMode] = useState<"inspector" | "list">("inspector");
+  const [adminViewMode, setAdminViewMode] = useState<"inspector" | "list" | "gallery">("inspector");
+  const [printTarget, setPrintTarget] = useState<"ledger" | "photos">("ledger");
   
   // Verification form states for current selection
   const [courseName, setCourseName] = useState<string>("");
@@ -877,6 +878,18 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                   <FileText className="w-3.5 h-3.5" />
                   <span>수료증 제출대장 (전체대장 형식)</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminViewMode("gallery")}
+                  className={`pb-3.5 text-xs sm:text-xs font-bold transition-all relative flex items-center gap-1.5 cursor-pointer md:px-1 ${
+                    adminViewMode === "gallery"
+                      ? "text-indigo-600 font-bold border-b-2 border-indigo-600"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>이수증 사진 모아보기 (일괄인쇄)</span>
+                </button>
               </div>
 
               {adminViewMode === "inspector" ? (
@@ -1153,7 +1166,7 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                 </div>
 
               </div>
-              ) : (
+              ) : adminViewMode === "list" ? (
                 /* Ledger Table list layout (수료증 제출대장 전체보기) */
                 <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 space-y-5" id="ledger-table-view">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
@@ -1309,6 +1322,176 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                     </table>
                   </div>
                 </div>
+              ) : (
+                /* Gallery Grid layout (이수증 사진 모아보기) */
+                <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 space-y-5" id="gallery-grid-view">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-bold text-slate-850 font-sans">제출 수료증 사진 모아보기</h3>
+                        <span className="bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 font-sans">
+                          총 수료증 이미지: <strong className="text-indigo-805">{filteredSubmissions.filter(s => s.certificateImage).length}개</strong>
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1 font-sans">
+                        제출된 수료증 사진(원본)을 바둑판식으로 모아보고, 필요 시 한 번에 인쇄할 수 있습니다.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                      {/* Search text box inside gallery */}
+                      <div className="relative flex-1 sm:flex-initial">
+                        <span className="absolute left-3 top-2.5 text-slate-400">
+                          <Search className="w-3.5 h-3.5" />
+                        </span>
+                        <input
+                          id="admin-gallery-search-text"
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="성명, 생년월일 또는 교육과정 검색..."
+                          className="w-full sm:w-60 pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-slate-50/20 focus:bg-white focus:outline-none transition-colors font-sans"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrintTarget("photos");
+                          setTimeout(() => {
+                            window.print();
+                          }, 50);
+                        }}
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 border border-slate-900 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs font-sans"
+                        title="모아둔 수료증 이미지를 페이지 규격에 맞게 일괄 인쇄"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>수료증 한꺼번에 인쇄하기</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter tabs inside gallery */}
+                  <div className="flex flex-wrap gap-1" id="gallery-filter-pills">
+                    <button
+                      type="button"
+                      onClick={() => setSubFilter("all")}
+                      className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                        subFilter === "all"
+                          ? "bg-slate-800 border-slate-800 text-white"
+                          : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      전체 ({submissions.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubFilter("pending")}
+                      className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                        subFilter === "pending"
+                          ? "bg-amber-600 border-amber-500 text-white"
+                          : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
+                      }`}
+                    >
+                      검토대기 ({submissions.filter(s => !s.isCompleted).length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubFilter("completed")}
+                      className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                        subFilter === "completed"
+                          ? "bg-emerald-600 border-emerald-500 text-white"
+                          : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
+                      }`}
+                    >
+                      이수완료 ({submissions.filter(s => s.isCompleted).length})
+                    </button>
+                  </div>
+
+                  {/* Certificate image gallery grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" id="gallery-images-grid">
+                    {filteredSubmissions.length === 0 ? (
+                      <div className="col-span-full py-16 text-center text-slate-400 font-semibold bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                        조건에 부합하는 수료증 이미지가 없습니다.
+                      </div>
+                    ) : (
+                      filteredSubmissions.map((sub) => (
+                        <div key={sub.id} className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex flex-col justify-between hover:shadow-md transition-all">
+                          <div className="space-y-2">
+                            {/* Certificate thumbnail block */}
+                            <div className="bg-white border border-slate-100 rounded-lg h-44 overflow-hidden relative flex items-center justify-center select-none group">
+                              {sub.certificateImage ? (
+                                <>
+                                  {sub.certificateImage.startsWith("data:application/pdf") ? (
+                                    <div className="w-full h-full p-2 bg-slate-50 flex flex-col items-center justify-center text-center">
+                                      <FileText className="w-10 h-10 text-slate-400 mb-1" />
+                                      <span className="text-[10px] font-semibold text-slate-550 truncate max-w-full px-2">PDF 수료증 문서</span>
+                                    </div>
+                                  ) : (
+                                    <img
+                                      src={sub.certificateImage}
+                                      alt={`${sub.assistantName} 수료증`}
+                                      className="w-full h-full object-cover"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  )}
+                                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer" onClick={() => setZoomedImage(sub.certificateImage)}>
+                                    <span className="bg-white/95 text-slate-800 text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-sm flex items-center gap-1">
+                                      <Eye className="w-3 h-3" /> 크게보기
+                                    </span>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-[11px] text-slate-350 italic">수료증 파일 없음</div>
+                              )}
+                            </div>
+
+                            {/* Info list */}
+                            <div className="space-y-1 text-xs">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-850 truncate">{sub.assistantName}</span>
+                                <span className="text-[10px] text-slate-405 font-mono">{sub.birthDate}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 truncate" title={sub.courseName || '과정명 미지정'}>
+                                {sub.courseName || <span className="text-slate-300 italic">과정명 미지정</span>}
+                              </p>
+                              <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                <span>인정 시간: <strong className="text-indigo-600 font-mono font-bold">{sub.trainingHours ? (sub.trainingHours.includes("시간") ? sub.trainingHours : `${sub.trainingHours}시간`) : "-"}</strong></span>
+                                <span>{new Date(sub.submittedAt).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Quick action button line */}
+                          <div className="border-t border-slate-100 mt-2.5 pt-2 flex items-center justify-between">
+                            {sub.isCompleted ? (
+                              <span className="px-2 py-0.5 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[9px] font-extrabold rounded-md leading-none">
+                                이수 완료
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 bg-amber-50 border border-amber-100 text-amber-700 text-[9px] font-extrabold rounded-md leading-none">
+                                검토 대기
+                              </span>
+                            )}
+
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAdminViewMode("inspector");
+                                  handleSelectItem(sub);
+                                }}
+                                className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-md text-[9px] font-bold cursor-pointer transition-all flex items-center gap-0.5"
+                              >
+                                <span>검증 및 승인</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               )}
             </motion.div>
           )}
@@ -1460,100 +1643,187 @@ Return the parsed values in Korean language inside the requested JSON schema.`
           ────────────────────────────────────────────── */}
       <div className="hidden print:block font-sans min-h-screen text-slate-900 bg-white" id="printing-sheet">
         <div className="p-8 w-full block">
-          {/* Header section designed beautifully for printed reports */}
-          <div className="text-center pb-6 border-b-2 border-slate-850 mb-6">
-            <h1 className="text-2xl font-bold tracking-tight font-sans text-slate-900">장애인활동지원 온라인 교육 수료대장</h1>
-            <p className="text-[10px] text-slate-500 mt-1 font-mono">수원시장애인종합복지관 | 출력 일자: {new Date().toLocaleDateString()}</p>
-          </div>
-          
-          {/* Aggregate summary fact blocks printed neat and clean */}
-          <div className="grid grid-cols-3 gap-4 border border-slate-350 bg-slate-50 p-4 rounded-lg mb-6 text-xs font-sans">
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">대장 집계 범위</p>
-              <p className="font-extrabold text-slate-800 text-sm">
-                {subFilter === "all" ? "전체 등록자" : subFilter === "completed" ? "이수완료자 명단" : "검토대기자 명단"}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">총 인원 집계</p>
-              <p className="font-extrabold text-slate-850 text-sm">{filteredSubmissions.length} 명</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">총 누적 인정시간</p>
-              <p className="font-extrabold text-indigo-700 text-sm">
-                {filteredSubmissions
-                  .filter((s) => s.isCompleted && s.trainingHours)
-                  .reduce((sum, s) => {
-                    const num = parseFloat(s.trainingHours.replace(/[^0-9.]/g, ""));
-                    return isNaN(num) ? sum : sum + num;
-                  }, 0)} 시간
-              </p>
-            </div>
-          </div>
-          
-          {/* Elegant printable data table */}
-          <table className="w-full text-xs border-collapse border border-slate-350">
-            <thead>
-              <tr className="bg-slate-100 border-b border-slate-350 text-[10px] font-bold text-slate-800 tracking-wide uppercase">
-                <th className="border border-slate-350 px-2 py-2 text-center w-10 whitespace-nowrap">No</th>
-                <th className="border border-slate-350 px-2.5 py-2 text-left w-[85px] whitespace-nowrap">지원사 성명</th>
-                <th className="border border-slate-350 px-2.5 py-2 text-center w-[90px] whitespace-nowrap">생년월일</th>
-                <th className="border border-slate-350 px-3.5 py-2 text-left">이수 교육과정명</th>
-                <th className="border border-slate-350 px-3 py-2 text-center w-[80px] whitespace-nowrap">인정 시간</th>
-                <th className="border border-slate-350 px-3 py-2 text-center w-[110px] whitespace-nowrap">제출(수합)일자</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredSubmissions.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="border border-slate-350 px-3 py-16 text-center text-slate-400 font-sans">
-                    출력할 수 있는 내역이 없습니다.
-                  </td>
-                </tr>
-              ) : (
-                <>
-                  {filteredSubmissions.map((sub, index) => (
-                    <tr key={sub.id} className="text-[11px] font-sans hover:bg-slate-50/20 animate-none">
-                      <td className="border border-slate-350 px-2 py-1.5 text-center font-mono text-slate-500 whitespace-nowrap">{index + 1}</td>
-                      <td className="border border-slate-350 px-2.5 py-1.5 font-bold text-slate-900 text-[11px] whitespace-nowrap">{sub.assistantName}</td>
-                      <td className="border border-slate-350 px-2.5 py-1.5 text-center font-mono text-slate-600 whitespace-nowrap">{sub.birthDate}</td>
-                      <td className="border border-slate-350 px-3.5 py-1.5 text-slate-800 font-medium text-[11px] leading-normal">{sub.courseName || "확인중"}</td>
-                      <td className="border border-slate-350 px-3 py-1.5 text-center font-mono font-bold text-slate-850 whitespace-nowrap">
-                        {sub.trainingHours ? (sub.trainingHours.includes("시간") ? sub.trainingHours : `${sub.trainingHours}시간`) : "-"}
-                      </td>
-                      <td className="border border-slate-350 px-3 py-1.5 text-center font-mono text-slate-500 whitespace-nowrap">
-                        {sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : "-"}
+          {printTarget === "ledger" ? (
+            <>
+              {/* Header section designed beautifully for printed reports */}
+              <div className="text-center pb-6 border-b-2 border-slate-850 mb-6">
+                <h1 className="text-2xl font-bold tracking-tight font-sans text-slate-900">장애인활동지원 온라인 교육 수료대장</h1>
+                <p className="text-[10px] text-slate-500 mt-1 font-mono">수원시장애인종합복지관 | 출력 일자: {new Date().toLocaleDateString()}</p>
+              </div>
+              
+              {/* Aggregate summary fact blocks printed neat and clean */}
+              <div className="grid grid-cols-3 gap-4 border border-slate-350 bg-slate-50 p-4 rounded-lg mb-6 text-xs font-sans">
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">대장 집계 범위</p>
+                  <p className="font-extrabold text-slate-800 text-sm">
+                    {subFilter === "all" ? "전체 등록자" : subFilter === "completed" ? "이수완료자 명단" : "검토대기자 명단"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">총 인원 집계</p>
+                  <p className="font-extrabold text-slate-850 text-sm">{filteredSubmissions.length} 명</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">총 누적 인정시간</p>
+                  <p className="font-extrabold text-indigo-700 text-sm">
+                    {filteredSubmissions
+                      .filter((s) => s.isCompleted && s.trainingHours)
+                      .reduce((sum, s) => {
+                        const num = parseFloat(s.trainingHours.replace(/[^0-9.]/g, ""));
+                        return isNaN(num) ? sum : sum + num;
+                      }, 0)} 시간
+                  </p>
+                </div>
+              </div>
+              
+              {/* Elegant printable data table */}
+              <table className="w-full text-xs border-collapse border border-slate-350">
+                <thead>
+                  <tr className="bg-slate-100 border-b border-slate-350 text-[10px] font-bold text-slate-800 tracking-wide uppercase">
+                    <th className="border border-slate-350 px-2 py-2 text-center w-10 whitespace-nowrap">No</th>
+                    <th className="border border-slate-350 px-2.5 py-2 text-left w-[85px] whitespace-nowrap">지원사 성명</th>
+                    <th className="border border-slate-350 px-2.5 py-2 text-center w-[90px] whitespace-nowrap">생년월일</th>
+                    <th className="border border-slate-350 px-3.5 py-2 text-left">이수 교육과정명</th>
+                    <th className="border border-slate-350 px-3 py-2 text-center w-[80px] whitespace-nowrap">인정 시간</th>
+                    <th className="border border-slate-350 px-3 py-2 text-center w-[110px] whitespace-nowrap">제출(수합)일자</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSubmissions.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="border border-slate-350 px-3 py-16 text-center text-slate-400 font-sans">
+                        출력할 수 있는 내역이 없습니다.
                       </td>
                     </tr>
+                  ) : (
+                    <>
+                      {filteredSubmissions.map((sub, index) => (
+                        <tr key={sub.id} className="text-[11px] font-sans hover:bg-slate-50/20 animate-none">
+                          <td className="border border-slate-350 px-2 py-1.5 text-center font-mono text-slate-500 whitespace-nowrap">{index + 1}</td>
+                          <td className="border border-slate-350 px-2.5 py-1.5 font-bold text-slate-900 text-[11px] whitespace-nowrap">{sub.assistantName}</td>
+                          <td className="border border-slate-350 px-2.5 py-1.5 text-center font-mono text-slate-600 whitespace-nowrap">{sub.birthDate}</td>
+                          <td className="border border-slate-350 px-3.5 py-1.5 text-slate-800 font-medium text-[11px] leading-normal">{sub.courseName || "확인중"}</td>
+                          <td className="border border-slate-350 px-3 py-1.5 text-center font-mono font-bold text-slate-850 whitespace-nowrap">
+                            {sub.trainingHours ? (sub.trainingHours.includes("시간") ? sub.trainingHours : `${sub.trainingHours}시간`) : "-"}
+                          </td>
+                          <td className="border border-slate-350 px-3 py-1.5 text-center font-mono text-slate-500 whitespace-nowrap">
+                            {sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : "-"}
+                          </td>
+                        </tr>
+                      ))}
+                      
+                      {/* Ledger summary totals row */}
+                      <tr className="bg-slate-50 font-bold text-xs">
+                        <td colSpan={3} className="border border-slate-350 px-3.5 py-2.5 text-center text-slate-700">
+                          합계
+                        </td>
+                        <td className="border border-slate-350 px-3.5 py-2.5 text-left text-slate-600 font-sans text-[10px]">
+                          완료 {filteredSubmissions.filter(s => s.isCompleted).length}건 / 대기 {filteredSubmissions.filter(s => !s.isCompleted).length}건
+                        </td>
+                        <td className="border border-slate-350 px-3 py-2.5 text-center text-indigo-700 font-extrabold text-sm font-mono whitespace-nowrap">
+                          {filteredSubmissions
+                            .filter((s) => s.isCompleted && s.trainingHours)
+                            .reduce((sum, s) => {
+                              const num = parseFloat(s.trainingHours.replace(/[^0-9.]/g, ""));
+                              return isNaN(num) ? sum : sum + num;
+                            }, 0)}시간
+                        </td>
+                        <td className="border border-slate-350 px-3 py-2.5 bg-slate-50"></td>
+                      </tr>
+                    </>
+                  )}
+                </tbody>
+              </table>
+              
+              {/* Footer part */}
+              <div className="mt-12 text-center text-xs font-semibold text-slate-400 font-sans border-t border-slate-100 pt-6">
+                수원시장애인종합복지관
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Header section designed beautifully for printed reports */}
+              <div className="text-center pb-6 border-b-2 border-slate-850 mb-6 font-sans">
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900">장애인활동지원 교육 수료증 증빙서 파일목록</h1>
+                <p className="text-[10px] text-slate-505 mt-1 font-mono">
+                  수원시장애인종합복지관 | 출력 범위: {subFilter === "all" ? "전체 등록자" : subFilter === "completed" ? "이수완료자" : "검토대기자"} (총 {filteredSubmissions.length}명) | 출력 일자: {new Date().toLocaleDateString()}
+                </p>
+              </div>
+
+              {filteredSubmissions.length === 0 ? (
+                <div className="text-center py-20 text-slate-400 font-sans border border-slate-200 rounded-lg">
+                  출력할 수 있는 증빙 문서가 없습니다.
+                </div>
+              ) : (
+                <div className="space-y-12">
+                  {filteredSubmissions.map((sub, index) => (
+                    <div 
+                      key={sub.id} 
+                      className="border-2 border-slate-300 p-6 rounded-2xl bg-white space-y-4 shadow-sm break-after-page page-break-after-always"
+                      style={{ pageBreakAfter: "always", breakAfter: "page" }}
+                    >
+                      {/* Document Meta Row */}
+                      <div className="flex justify-between items-center border-b border-slate-200 pb-2.5 text-xs font-sans">
+                        <div>
+                          <span className="bg-slate-900 text-white font-extrabold px-2.5 py-1 rounded-sm mr-2.5">증빙서 #{index + 1}</span>
+                          <span className="font-extrabold text-base text-slate-900">활동지원사: {sub.assistantName}</span>
+                          <span className="text-slate-500 font-mono font-bold ml-1">({sub.birthDate})</span>
+                        </div>
+                        <div className="text-right text-slate-500 font-mono font-medium">
+                          <span>제출일: {new Date(sub.submittedAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Course summary */}
+                      <div className="grid grid-cols-2 gap-4 text-xs font-sans p-4 bg-slate-50 border border-slate-205 rounded-xl">
+                        <div>
+                          <p className="text-slate-400 font-bold block">이수 교육과정명</p>
+                          <p className="font-extrabold text-slate-800 text-sm mt-0.5">{sub.courseName || "과정명 미지정"}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-slate-400 font-bold block">인정 교육시간</p>
+                            <p className="font-extrabold text-indigo-700 text-sm mt-0.5">{sub.trainingHours ? (sub.trainingHours.includes("시간") ? sub.trainingHours : `${sub.trainingHours}시간`) : "시간 미지정"}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400 font-bold block">승인 상태</p>
+                            <p className="font-extrabold text-slate-800 text-sm mt-0.5">{sub.isCompleted ? "이수 완료(승인)" : "검토 대기중"}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Certificate Visual Image */}
+                      <div className="border border-slate-200 p-3 flex items-center justify-center max-h-[72vh] overflow-hidden rounded-xl bg-slate-50">
+                        {sub.certificateImage ? (
+                          sub.certificateImage.startsWith("data:application/pdf") ? (
+                            <div className="text-center py-24 font-sans text-slate-400 text-xs">
+                              <FileText className="w-16 h-16 text-slate-300 mx-auto mb-3" />
+                              PDF 형식의 수료증 문서입니다.<br/>
+                              (브라우저 인쇄 설정에서 무늬/배경 이미지 출력을 체크해 주십시오.)
+                            </div>
+                          ) : (
+                            <img
+                              src={sub.certificateImage}
+                              alt={`${sub.assistantName} 교육 수료증`}
+                              className="max-h-[68vh] object-contain max-w-full rounded-lg"
+                              referrerPolicy="no-referrer"
+                            />
+                          )
+                        ) : (
+                          <div className="text-slate-350 italic font-sans py-24 text-xs">수료증 파일 원본이 존재하지 않습니다.</div>
+                        )}
+                      </div>
+                    </div>
                   ))}
                   
-                  {/* Ledger summary totals row */}
-                  <tr className="bg-slate-50 font-bold text-xs">
-                    <td colSpan={3} className="border border-slate-350 px-3.5 py-2.5 text-center text-slate-700">
-                      합계
-                    </td>
-                    <td className="border border-slate-350 px-3.5 py-2.5 text-left text-slate-600 font-sans text-[10px]">
-                      완료 {filteredSubmissions.filter(s => s.isCompleted).length}건 / 대기 {filteredSubmissions.filter(s => !s.isCompleted).length}건
-                    </td>
-                    <td className="border border-slate-350 px-3 py-2.5 text-center text-indigo-700 font-extrabold text-sm font-mono whitespace-nowrap">
-                      {filteredSubmissions
-                        .filter((s) => s.isCompleted && s.trainingHours)
-                        .reduce((sum, s) => {
-                          const num = parseFloat(s.trainingHours.replace(/[^0-9.]/g, ""));
-                          return isNaN(num) ? sum : sum + num;
-                        }, 0)}시간
-                    </td>
-                    <td className="border border-slate-350 px-3 py-2.5 bg-slate-50"></td>
-                  </tr>
-                </>
+                  {/* Ledger summary footer */}
+                  <div className="text-center text-xs font-semibold text-slate-400 font-sans border-t border-slate-100 pt-6">
+                    수원시장애인종합복지관
+                  </div>
+                </div>
               )}
-            </tbody>
-          </table>
-          
-          {/* Footer part */}
-          <div className="mt-12 text-center text-xs font-semibold text-slate-400 font-sans border-t border-slate-100 pt-6">
-            수원시장애인종합복지관
-          </div>
+            </>
+          )}
         </div>
       </div>
     </div>
