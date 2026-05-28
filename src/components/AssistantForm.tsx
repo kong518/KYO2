@@ -401,18 +401,6 @@ If no training hours option is visible, leave it as an empty string.`
               <ShieldCheck className="w-5 h-5 text-indigo-600" />
               온라인 수료증 제출 시스템
             </h3>
-            
-            {/* API Key Configuration Trigger */}
-            <button
-              type="button"
-              id="btn-toggle-assistant-api-key"
-              onClick={() => setShowApiKeySetting(!showApiKeySetting)}
-              className="text-xs font-semibold px-4 py-1.5 rounded-xl bg-white border border-slate-200/80 shadow-xs hover:border-indigo-300 hover:text-indigo-650 transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer text-slate-600"
-            >
-              <Settings className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-500 ${showApiKeySetting ? 'rotate-180' : ''}`} />
-              <span>AI 서버 설정</span>
-              <span className={`inline-block w-2 h-2 rounded-full ${isApiKeySaved ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
-            </button>
           </div>
 
           <p className="text-xs text-slate-500 mt-1 leading-relaxed font-sans">
@@ -420,59 +408,6 @@ If no training hours option is visible, leave it as an empty string.`
             <span className="font-bold text-indigo-600"> [이름, 교육명, 교육시간]</span>을 수료증에서 찾아 자동으로 적어 줍니다.
             활동지원사님께서는 정보 확인 후 <span className="font-bold text-indigo-600">[생년월일(6자리)]</span>만 본인이 직접 적어 주시면 수료가 승인됩니다.
           </p>
-
-          <AnimatePresence>
-            {showApiKeySetting && (
-              <motion.div
-                key="api-key-expander"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="mt-3.5 pt-3.5 border-t border-slate-200/60 font-sans space-y-3">
-                  <div className="flex items-center gap-1.5 text-indigo-600">
-                    <Key className="w-4 h-4 text-indigo-500" />
-                    <h4 className="text-xs font-bold text-slate-800">개인 Gemini API Key 설정 및 저장</h4>
-                  </div>
-                  
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    AI 분석 속도가 느려지거나 한도가 마감될 경우에 대비해 개인 구글 API Key를 이곳에 저장할 수 있습니다. 
-                    한 번 저장하시면 브라우저에 기억되므로 계속 자동 적용되며, 공용 서버 부하 상태에도 중단 없는 즉각적인 1초 분석이 가능합니다.
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row gap-2 max-w-xl">
-                    <input
-                      id="input-assistant-api-key"
-                      type="password"
-                      value={userApiKey}
-                      onChange={(e) => setUserApiKey(e.target.value)}
-                      placeholder="AIzaSy... 로 시작하는 제미나이 API Key 입력"
-                      className="flex-1 px-3 py-2 border border-slate-200 bg-white rounded-xl text-xs font-mono focus:outline-none focus:border-indigo-500 focus:bg-white transition-all font-semibold"
-                    />
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleSaveApiKey(userApiKey)}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        저장하기
-                      </button>
-                      {isApiKeySaved && (
-                        <button
-                          type="button"
-                          onClick={() => handleSaveApiKey('')}
-                          className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs rounded-xl transition-colors cursor-pointer whitespace-nowrap"
-                        >
-                          초기화
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
         {submitSuccess ? (
