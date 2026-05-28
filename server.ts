@@ -9,6 +9,8 @@ import fs from "fs/promises";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
 dotenv.config();
 
@@ -23,24 +25,92 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "submissions.json");
 const CONFIG_FILE = path.join(DATA_DIR, "config.json");
 
+// Initialize Firebase client on server-side for Firestore access
+let firestoreDb: any = null;
+
+async function getFirestoreDb() {
+  if (firestoreDb) return firestoreDb;
+  try {
+    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+    const configRaw = await fs.readFile(configPath, "utf-8");
+    const firebaseConfig = JSON.parse(configRaw);
+    const appInstance = initializeApp(firebaseConfig);
+    firestoreDb = getFirestore(appInstance, firebaseConfig.firestoreDatabaseId);
+    return firestoreDb;
+  } catch (error) {
+    console.error("Failed to initialize firestore connection:", error);
+    return null;
+  }
+}
+
 // Read config
 async function readConfig() {
   await ensureDataFile();
+  let localConfig: any = {};
+  
+  // 1. Try reading from local file first
   try {
     const data = await fs.readFile(CONFIG_FILE, "utf-8");
-    return JSON.parse(data);
+    localConfig = JSON.parse(data);
   } catch {
-    return {};
+    localConfig = {};
   }
+
+  // 2. Fetch from Firestore persistently if local cache lacks the key
+  if (!localConfig.geminiApiKey) {
+    try {
+      const firestore = await getFirestoreDb();
+      if (firestore) {
+        const docRef = doc(firestore, "settings", "config");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const cloudConfig = docSnap.data();
+          if (cloudConfig && cloudConfig.geminiApiKey) {
+            localConfig.geminiApiKey = cloudConfig.geminiApiKey.trim();
+            // Cache locally for faster subsequent access
+            try {
+              await fs.writeFile(CONFIG_FILE, JSON.stringify(localConfig, null, 2), "utf-8");
+              console.log("Cached API Key from Firestore cloud locally.");
+            } catch (e) {
+              console.error("Failed to cache Cloud API Key locally:", e);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load API Key from Firestore cloud:", e);
+    }
+  }
+
+  return localConfig;
 }
 
 // Write config
 async function writeConfig(config: any) {
   await ensureDataFile();
+  
+  // 1. Save to local file
   try {
     await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
   } catch (error) {
-    console.error("Failed to write config:", error);
+    console.error("Failed to write config locally:", error);
+  }
+
+  // 2. Save persistently to central Firestore database
+  if (config.geminiApiKey) {
+    try {
+      const firestore = await getFirestoreDb();
+      if (firestore) {
+        const docRef = doc(firestore, "settings", "config");
+        await setDoc(docRef, {
+          geminiApiKey: config.geminiApiKey.trim(),
+          updatedAt: new Date().toISOString(),
+        });
+        console.log("Saved API Key persistently to Firestore database.");
+      }
+    } catch (e) {
+      console.error("Failed to save API Key to Firestore cloud:", e);
+    }
   }
 }
 

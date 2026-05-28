@@ -207,6 +207,8 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
     try {
       let parsedData;
       let usedServer = false;
+      let serverErrorMsg = "";
+      let isServerKeyMissing = false;
 
       // 1. ALWAYS try the central server OCR endpoint first so visitors/helpers need zero local configuration!
       try {
@@ -224,25 +226,29 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
             parsedData = JSON.parse(textRes);
             usedServer = true;
           } catch {
-            // Ignore parse error and proceed to client key attempt
+            serverErrorMsg = "서버 분석 응답 데이터 파싱 실패";
           }
         } else {
-          // If server failed because of 505 (no server key configured), we handle it gracefully below
-          let errJSON = {};
+          let errJSON: any = {};
           try {
             errJSON = JSON.parse(textRes);
           } catch (e) {}
-          console.warn("Server OCR failed, checking local credentials fallback...", errJSON);
+          
+          serverErrorMsg = errJSON.error || `서버 처리 오류 (상태 코드: ${response.status})`;
+          if (response.status === 505) {
+            isServerKeyMissing = true;
+          }
         }
-      } catch (serverErr) {
+      } catch (serverErr: any) {
         console.warn("Server OCR failed, falling back to local storage key check...", serverErr);
+        serverErrorMsg = "서버 연결 실패: " + (serverErr.message || serverErr);
       }
 
       // 2. If server didn't analyze successfully, check if there is a client-side key
       if (!usedServer) {
         const clientApiKey = localStorage.getItem("USER_GEMINI_API_KEY");
         if (clientApiKey) {
-          setOcrStatusMessage('서버에 저장된 키가 없어 브라우저 로컬 개인 API Key로 직접 분석을 대체 진행 중...');
+          setOcrStatusMessage('서버에 저장된 키가 없거나 분석에 실패하여 브라우저 로컬 개인 API Key로 직접 분석을 대체 진행 중...');
           const { GoogleGenAI, Type } = await import('@google/genai');
           
           let rawBase64 = base64Data;
@@ -297,7 +303,11 @@ If no training hours option is visible, leave it as an empty string.`
           }
           parsedData = JSON.parse(response.text.trim());
         } else {
-          throw new Error("Gemini API 키가 서버 앱(또는 개인 설정)에 구성되어 있지 않습니다. 우측 상단의 [AI 서버 설정] 버튼을 눌러 연동할 API 키를 먼저 입력 및 저장해 주세요.");
+          if (isServerKeyMissing) {
+            throw new Error("Gemini API 키가 서버 앱에 구성되어 있지 않습니다. 우측 상단의 [AI 서버 설정] 버튼을 눌러 연동할 API 키를 등록 및 저장해 주세요.");
+          } else {
+            throw new Error(serverErrorMsg || "수료증 분석에 실패하였습니다. 수동으로 상세 인적사항 및 교육 정보를 입력해 주세요.");
+          }
         }
       }
 

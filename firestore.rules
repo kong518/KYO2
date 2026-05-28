@@ -53,5 +53,10 @@ service cloud.firestore {
         && incoming().certificateImage == existing().certificateImage
         && incoming().submittedAt == existing().submittedAt;
     }
+
+    // Settings Rule Map
+    match /settings/{documentId} {
+      allow read, write: if true;
+    }
   }
 }
