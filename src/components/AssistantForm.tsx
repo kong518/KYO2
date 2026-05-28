@@ -567,6 +567,48 @@ If no training hours option is visible, leave it as an empty string.`
               <div className="space-y-4" id="form-inputs-col">
                 <h4 className="text-xs font-bold tracking-wider text-slate-400 uppercase border-b border-slate-100 pb-2">인적사항 및 교육 정보</h4>
 
+                {/* Highly visible notice message for teachers while AI is analyzing */}
+                {isOcrProcessing && (
+                  <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl flex items-start gap-2.5 animate-pulse" id="ocr-waiting-notice">
+                    <Loader2 className="w-4 h-4 text-amber-600 animate-spin shrink-0 mt-0.5" />
+                    <div className="font-sans text-xs">
+                      <span className="font-bold text-amber-950 block">잠시만 기다려 주세요!</span>
+                      <p className="text-slate-650 font-semibold mt-1 text-[11px] leading-relaxed">
+                        사진이나 PDF형식의 교육수료증을 등록하시면 인공지능이 이름, 교육명, 교육시간을 자동으로 작성중입니다.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Birth Date Input (Now placing Birth Date strictly above assistantName) */}
+                <div className="pt-2">
+                  <label className="block text-xs font-bold text-slate-900 mb-1.5 flex items-center justify-between bg-yellow-50/50 p-1 rounded-md border border-yellow-100/50 px-2">
+                    <span className="flex items-center gap-1 text-slate-800 font-sans">
+                      <Calendar className="w-4 h-4 text-indigo-600 animate-pulse" />
+                      활동지원사 본인 생년월일 <span className="text-red-500 font-bold">*</span>
+                    </span>
+                    <span className="text-[9px] text-indigo-700 font-bold">※ 반드시 본인이 입력</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-3 text-slate-400">
+                      <Calendar className="w-4 h-4 text-indigo-500" />
+                    </span>
+                    <input
+                      id="birth-date"
+                      type="text"
+                      required
+                      maxLength={6}
+                      value={birthDate}
+                      onChange={(e) => setBirthDate(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="숫자 6자리 입력 (예: 740125)"
+                      className="w-full pl-9 pr-4 py-2.5 border-2 border-indigo-500 rounded-xl text-sm text-slate-900 bg-indigo-50/10 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-colors font-bold tracking-wider shadow-xs placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1.5 font-medium leading-relaxed">
+                    예시: 1974년 1월 25일생인 경우 <span className="font-bold underline text-indigo-600">“740125”</span> 로 숫자 6자리 기입하십시오.
+                  </p>
+                </div>
+
                 {/* Name Input */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
@@ -630,35 +672,6 @@ If no training hours option is visible, leave it as an empty string.`
                     />
                   </div>
                 </div>
-
-                {/* Birth Date Input */}
-                <div className="pt-2">
-                  <label className="block text-xs font-bold text-slate-900 mb-1.5 flex items-center justify-between bg-yellow-50/50 p-1 rounded-md border border-yellow-100/50 px-2">
-                    <span className="flex items-center gap-1 text-slate-800">
-                      <Calendar className="w-4 h-4 text-indigo-600 animate-bounce" />
-                      활동지원사 본인 생년월일 <span className="text-red-500 font-bold">*</span>
-                    </span>
-                    <span className="text-[9px] text-indigo-700 font-bold">※ 반드시 본인이 입력</span>
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-3 text-slate-400">
-                      <Calendar className="w-4 h-4 text-indigo-500" />
-                    </span>
-                    <input
-                      id="birth-date"
-                      type="text"
-                      required
-                      maxLength={6}
-                      value={birthDate}
-                      onChange={(e) => setBirthDate(e.target.value.replace(/[^0-9]/g, ''))}
-                      placeholder="숫자 6자리 입력 (예: 740125)"
-                      className="w-full pl-9 pr-4 py-2.5 border-2 border-indigo-500 rounded-xl text-sm text-slate-900 bg-indigo-50/10 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-colors font-bold tracking-wider shadow-xs placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400"
-                    />
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1.5 font-medium leading-relaxed">
-                    예시: 1974년 1월 25일생인 경우 <span className="font-bold underline text-indigo-600">“740125”</span> 로 숫자 6자리 기입하십시오.
-                  </p>
-                </div>
               </div>
             </div>
 
@@ -675,7 +688,7 @@ If no training hours option is visible, leave it as an empty string.`
                 id="btn-submit-form"
                 type="submit"
                 disabled={isSubmitting || isOcrProcessing}
-                className="w-full sm:w-auto px-8 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-205 disabled:bg-slate-200 text-white font-semibold text-xs tracking-wider rounded-xl shadow-md hover:shadow-lg hover:shadow-indigo-50 shadow-indigo-100 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full sm:w-auto px-8 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 text-white font-semibold text-xs tracking-wider rounded-xl shadow-md hover:shadow-lg hover:shadow-indigo-50 shadow-indigo-100 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {isSubmitting ? (
                   <>
