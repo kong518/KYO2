@@ -33,7 +33,7 @@ import AssistantForm from "./components/AssistantForm";
 import { EducationCertificate, EducationStats } from "./types";
 
 // Firebase Applet Integration
-import { db } from "./firebase";
+import { db, getStoredGeminiApiKey } from "./firebase";
 import { 
   collection, 
   query, 
@@ -42,7 +42,8 @@ import {
   addDoc, 
   updateDoc, 
   deleteDoc, 
-  doc 
+  doc,
+  setDoc
 } from "firebase/firestore";
 
 // Google GenAI Platform
@@ -326,19 +327,41 @@ export default function App() {
   const handleSaveApiKeySetting = async (key: string) => {
     const trimmedKey = key.trim();
     try {
-      const res = await fetch("/api/settings/apikey", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ apiKey: trimmedKey }),
-      });
-      if (!res.ok) {
-        throw new Error("서버에 API Key를 저장하는 중 오류가 발생했습니다.");
+      let savedOnServer = false;
+      // 1. Try to save on Express Server first
+      try {
+        const res = await fetch("/api/settings/apikey", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ apiKey: trimmedKey }),
+        });
+        if (res.ok) {
+          savedOnServer = true;
+        }
+      } catch (err) {
+        console.warn("Express API unavailable, proceeding to save directly to Firestore...");
       }
+
+      // 2. Fallback: Save directly to Firestore settings/config client-side!
+      try {
+        const docRef = doc(db, "settings", "config");
+        await setDoc(docRef, {
+          geminiApiKey: trimmedKey,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (dbErr: any) {
+        console.error("Firestore write failed:", dbErr);
+        if (!savedOnServer) {
+          throw new Error("서버 및 데이터베이스 모두에 저장하지 못했습니다: " + dbErr.message);
+        }
+      }
+
+      // Save locally as cache
       localStorage.setItem("USER_GEMINI_API_KEY", trimmedKey);
       setTempApiKey(trimmedKey);
-      alert("Gemini API Key가 애플리케이션 서버 앱 및 브라우저에 안전하게 저장되었습니다.\n이제 링크를 받는 모든 사용자가 별도의 설정 없이 수료증 자동 분석 기능을 즉시 이용할 수 있습니다.");
+      alert("Gemini API Key가 애플리케이션 및 브라우저 데이터베이스에 안전하게 영구 저장되었습니다.\n이제 링크를 받는 모든 사용자가 별도의 로그인/설정없이 수료증 자동 판독 기능을 즉시 이용할 수 있습니다.");
       setShowApiKeySetting(false);
     } catch (err: any) {
       alert("API Key 저장 실패: " + (err.message || err));
@@ -354,24 +377,84 @@ export default function App() {
     setAiAnalysisLoading(true);
     setAiFeedback(null);
     try {
-      const response = await fetch('/api/submissions/ocr', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ imageBase64: imgBase64 }),
-      });
+      let data: any = null;
+      let usedServer = false;
 
-      const textRes = await response.text();
-      let data;
+      // 1. Try server OCR first
       try {
-        data = JSON.parse(textRes);
-      } catch {
-        throw new Error("서버 분석 중 응답 파싱 오류가 발생했습니다.");
+        const response = await fetch('/api/submissions/ocr', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ imageBase64: imgBase64 }),
+        });
+
+        if (response.ok) {
+          const textRes = await response.text();
+          data = JSON.parse(textRes);
+          usedServer = true;
+        }
+      } catch (err) {
+        console.warn("Express backend OCR unavailable or returned error, attempting client-side fallback...", err);
       }
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Gemini 분석 중 오류 발생');
+      // 2. Client-side fallback if server failed (e.g., on Vercel)
+      if (!usedServer) {
+        const key = await getStoredGeminiApiKey();
+        if (!key) {
+          throw new Error("서버 또는 데이터베이스에 등록된 Gemini API Key가 없습니다. 우측 상단의 [⚙️ API Key 설정] 버튼을 클릭해 등록해주세요.");
+        }
+
+        const { GoogleGenAI, Type } = await import('@google/genai');
+        
+        // Clean up base64
+        let rawBase64 = imgBase64;
+        let mimeType = 'image/png';
+        if (imgBase64.includes(";base64,")) {
+          const parts = imgBase64.split(";base64,");
+          rawBase64 = parts[1];
+          mimeType = parts[0].replace("data:", "").split(";")[0];
+        }
+
+        const ai = new GoogleGenAI({ apiKey: key });
+        const response = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: [
+            {
+              inlineData: {
+                data: rawBase64,
+                mimeType,
+              }
+            },
+            `Please analyze this uploaded training certificate. 
+Extract the following details from this image/PDF:
+1. Name (성명/이름)
+2. Date of Birth (생년월일 - 6자리 예시: 740125)
+3. Course Name (교육명칭/수강과정명)
+4. Training Hours (교육이수시간)
+
+Return the parsed values in Korean language inside the requested JSON schema.`
+          ],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                assistantName: { type: Type.STRING },
+                birthDate: { type: Type.STRING },
+                courseName: { type: Type.STRING },
+                trainingHours: { type: Type.STRING }
+              },
+              required: ["assistantName", "birthDate", "courseName", "trainingHours"]
+            }
+          }
+        });
+
+        if (!response.text) {
+          throw new Error("수행된 직접분석의 응답 본문이 비어있습니다.");
+        }
+        data = JSON.parse(response.text.trim());
       }
 
       const extractedCourse = data.courseName || "";
