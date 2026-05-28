@@ -55,20 +55,36 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
     setIsApiKeySaved(!!savedKey);
   }, []);
 
-  const handleSaveApiKey = (key: string) => {
+  const handleSaveApiKey = async (key: string) => {
     const trimmed = key.trim();
-    if (trimmed) {
-      localStorage.setItem("USER_GEMINI_API_KEY", trimmed);
-      setIsApiKeySaved(true);
-      setUserApiKey(trimmed);
-      alert("개인 Gemini API Key가 안전하게 저장되었습니다.\n이제 이 기기에서 매번 입력할 필요 없이 항상 최우선적으로 자동 적용됩니다.");
-    } else {
-      localStorage.removeItem("USER_GEMINI_API_KEY");
-      setIsApiKeySaved(false);
-      setUserApiKey('');
-      alert("개인 API Key가 초기화되었습니다. 이제 기본 공용 AI 분석으로 동작합니다.");
+    try {
+      // Save to server config first so it is preserved centrally for ALL users/links
+      const res = await fetch("/api/settings/apikey", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ apiKey: trimmed }),
+      });
+      if (!res.ok) {
+        throw new Error("서버에 API Key를 저장하는 중 오류가 발생했습니다.");
+      }
+
+      if (trimmed) {
+        localStorage.setItem("USER_GEMINI_API_KEY", trimmed);
+        setIsApiKeySaved(true);
+        setUserApiKey(trimmed);
+        alert("Gemini API Key가 애플리케이션 서버 앱 및 브라우저에 안전하게 저장되었습니다.\n이제 링크를 받는 모든 사용자가 별도의 설정 없이 수료증 자동 분석 기능을 즉시 이용할 수 있습니다.");
+      } else {
+        localStorage.removeItem("USER_GEMINI_API_KEY");
+        setIsApiKeySaved(false);
+        setUserApiKey('');
+        alert("개인 API Key가 초기화되었습니다. 이제 기본 공용 AI 분석으로 동작합니다.");
+      }
+      setShowApiKeySetting(false);
+    } catch (err: any) {
+      alert("API Key 저장 실패: " + (err.message || err));
     }
-    setShowApiKeySetting(false);
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -189,66 +205,11 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
     setOcrSuccess(false);
 
     try {
-      const clientApiKey = localStorage.getItem("USER_GEMINI_API_KEY");
       let parsedData;
+      let usedServer = false;
 
-      if (clientApiKey) {
-        // Direct Client-Side extraction for absolute speed and bypass constraints
-        const { GoogleGenAI, Type } = await import('@google/genai');
-        
-        let rawBase64 = base64Data;
-        let mimeType = type === 'pdf' ? 'application/pdf' : 'image/png';
-
-        if (base64Data.includes(";base64,")) {
-          const parts = base64Data.split(";base64,");
-          rawBase64 = parts[1];
-          mimeType = parts[0].replace("data:", "").split(";")[0];
-        }
-
-        const ai = new GoogleGenAI({ apiKey: clientApiKey });
-        const dataPart = {
-          inlineData: {
-            data: rawBase64,
-            mimeType: mimeType,
-          },
-        };
-
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: [
-            dataPart,
-            `Please analyze this uploaded online training certificate. 
-Our target is to extract information about the activity assistant (활동지원사) who completed the training.
-Extract the following details from this image/PDF:
-1. Name (성명/이름)
-2. Date of Birth (생년월일 - 6자리 예시: 740125)
-3. Course Name (교육명칭/수강과정명 - 예시: '활동지원사 온라인 보수교육', '발달장애인 지원 교육' 등)
-4. Training Hours (교육이수시간 - 예시: '8시간', '4시간' 등)
-
-Return the parsed values in Korean language inside the requested JSON schema.
-If no training hours option is visible, leave it as an empty string.`
-          ],
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                assistantName: { type: Type.STRING, description: "정확한 성명/이름" },
-                birthDate: { type: Type.STRING, description: "활동지원사 생년월일 (예시: 740125)" },
-                courseName: { type: Type.STRING, description: "교육과정명 또는 교육명 (예시: 복지교육)" },
-                trainingHours: { type: Type.STRING, description: "교육 이수 시간 (예시: 8시간)" }
-              },
-              required: ["assistantName", "birthDate", "courseName", "trainingHours"]
-            }
-          }
-        });
-
-        if (!response.text) {
-          throw new Error("Gemini 분석 엔진에서 응답이 생성되지 않았습니다.");
-        }
-        parsedData = JSON.parse(response.text.trim());
-      } else {
-        // Fall back to server api route (which is configured with server-side GEMINI_API_KEY)
+      // 1. ALWAYS try the central server OCR endpoint first so visitors/helpers need zero local configuration!
+      try {
         const response = await fetch('/api/submissions/ocr', {
           method: 'POST',
           headers: {
@@ -258,17 +219,86 @@ If no training hours option is visible, leave it as an empty string.`
         });
 
         const textRes = await response.text();
-        let data;
-        try {
-          data = JSON.parse(textRes);
-        } catch {
-          throw new Error("서버 분석 중 오류가 발생했습니다.");
+        if (response.ok) {
+          try {
+            parsedData = JSON.parse(textRes);
+            usedServer = true;
+          } catch {
+            // Ignore parse error and proceed to client key attempt
+          }
+        } else {
+          // If server failed because of 505 (no server key configured), we handle it gracefully below
+          let errJSON = {};
+          try {
+            errJSON = JSON.parse(textRes);
+          } catch (e) {}
+          console.warn("Server OCR failed, checking local credentials fallback...", errJSON);
         }
+      } catch (serverErr) {
+        console.warn("Server OCR failed, falling back to local storage key check...", serverErr);
+      }
 
-        if (!response.ok) {
-          throw new Error(data.error || 'Gemini 분석 중 오류 발생');
+      // 2. If server didn't analyze successfully, check if there is a client-side key
+      if (!usedServer) {
+        const clientApiKey = localStorage.getItem("USER_GEMINI_API_KEY");
+        if (clientApiKey) {
+          setOcrStatusMessage('서버에 저장된 키가 없어 브라우저 로컬 개인 API Key로 직접 분석을 대체 진행 중...');
+          const { GoogleGenAI, Type } = await import('@google/genai');
+          
+          let rawBase64 = base64Data;
+          let mimeType = type === 'pdf' ? 'application/pdf' : 'image/png';
+
+          if (base64Data.includes(";base64,")) {
+            const parts = base64Data.split(";base64,");
+            rawBase64 = parts[1];
+            mimeType = parts[0].replace("data:", "").split(";")[0];
+          }
+
+          const ai = new GoogleGenAI({ apiKey: clientApiKey });
+          const dataPart = {
+            inlineData: {
+              data: rawBase64,
+              mimeType: mimeType,
+            },
+          };
+
+          const response = await ai.models.generateContent({
+            model: "gemini-3.5-flash",
+            contents: [
+              dataPart,
+              `Please analyze this uploaded online training certificate. 
+Our target is to extract information about the activity assistant (활동지원사) who completed the training.
+Extract the following details from this image/PDF:
+1. Name (성명/이름)
+2. Date of Birth (생년월일 - 6자리 예시: 740125)
+3. Course Name (교육명칭/수강과정명 - 예시: '활동지원사 온라인 보수교육', '발달장애인 지원 교육' 등)
+4. Training Hours (교육이수시간 - 예시: '8시간', '4시간' 등)
+
+Return the parsed values in Korean language inside the requested JSON schema.
+If no training hours option is visible, leave it as an empty string.`
+            ],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  assistantName: { type: Type.STRING, description: "정확한 성명/이름" },
+                  birthDate: { type: Type.STRING, description: "활동지원사 생년월일 (예시: 740125)" },
+                  courseName: { type: Type.STRING, description: "교육과정명 또는 교육명 (예시: 복지교육)" },
+                  trainingHours: { type: Type.STRING, description: "교육 이수 시간 (예시: 8시간)" }
+                },
+                required: ["assistantName", "birthDate", "courseName", "trainingHours"]
+              }
+            }
+          });
+
+          if (!response.text) {
+            throw new Error("Gemini 분석 엔진에서 응답이 생성되지 않았습니다.");
+          }
+          parsedData = JSON.parse(response.text.trim());
+        } else {
+          throw new Error("Gemini API 키가 서버 앱(또는 개인 설정)에 구성되어 있지 않습니다. 우측 상단의 [AI 서버 설정] 버튼을 눌러 연동할 API 키를 먼저 입력 및 저장해 주세요.");
         }
-        parsedData = data;
       }
 
       // Auto-fill extracted values

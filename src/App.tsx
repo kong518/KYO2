@@ -46,7 +46,7 @@ import {
 } from "firebase/firestore";
 
 // Google GenAI Platform
-import { GoogleGenAI, Type } from "@google/genai";
+
 
 export default function App() {
   const [userMode, setUserMode] = useState<"assistant" | "admin">("assistant");
@@ -323,11 +323,26 @@ export default function App() {
     return localStorage.getItem("USER_GEMINI_API_KEY") || (import.meta as any).env.VITE_GEMINI_API_KEY || "";
   };
 
-  const handleSaveApiKeySetting = (key: string) => {
-    localStorage.setItem("USER_GEMINI_API_KEY", key.trim());
-    setTempApiKey(key.trim());
-    alert("Gemini API Key가 안전하게 브라우저에 저장되었습니다.");
-    setShowApiKeySetting(false);
+  const handleSaveApiKeySetting = async (key: string) => {
+    const trimmedKey = key.trim();
+    try {
+      const res = await fetch("/api/settings/apikey", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ apiKey: trimmedKey }),
+      });
+      if (!res.ok) {
+        throw new Error("서버에 API Key를 저장하는 중 오류가 발생했습니다.");
+      }
+      localStorage.setItem("USER_GEMINI_API_KEY", trimmedKey);
+      setTempApiKey(trimmedKey);
+      alert("Gemini API Key가 애플리케이션 서버 앱 및 브라우저에 안전하게 저장되었습니다.\n이제 링크를 받는 모든 사용자가 별도의 설정 없이 수료증 자동 분석 기능을 즉시 이용할 수 있습니다.");
+      setShowApiKeySetting(false);
+    } catch (err: any) {
+      alert("API Key 저장 실패: " + (err.message || err));
+    }
   };
 
   const handleAiOcrAnalysis = async (imgBase64: string, subName: string, subBirth: string) => {
@@ -336,72 +351,29 @@ export default function App() {
       return;
     }
 
-    const apiKey = getGeminiApiKey();
-    if (!apiKey) {
-      setAiFeedback({ 
-        type: "error", 
-        message: "Gemini API 키가 등록되어 있지 않습니다.\n\n우측 상단의 [⚙️ API Key 설정] 버튼을 눌러 발급받으신 무료 API Key를 입력 및 저장한 후 다시 추진해 주시기 바랍니다." 
-      });
-      return;
-    }
-
     setAiAnalysisLoading(true);
     setAiFeedback(null);
     try {
-      // Strip base64 prefix
-      let rawBase64 = imgBase64;
-      let mimeType = "image/png";
-
-      if (imgBase64.includes(";base64,")) {
-        const parts = imgBase64.split(";base64,");
-        rawBase64 = parts[1];
-        mimeType = parts[0].replace("data:", "");
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-
-      const imagePart = {
-        inlineData: {
-          data: rawBase64,
-          mimeType: mimeType,
+      const response = await fetch('/api/submissions/ocr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-      };
-
-      const promptMessage = `Please analyze this uploaded online training certificate. 
-Our target is to extract information about the activity assistant (활동지원사) who completed the work.
-Extract the following details from this image:
-1. Name (성명/이름)
-2. Date of Birth (생년월일)
-3. Course Name (교육명칭/수강과정명)
-4. Training Hours (교육이수시간 - 예시: '8시간', '4시간', '2시간' 등)
-
-Return the parsed values in Korean language inside the requested JSON schema.
-If the birth date is found, represent it as 'YYMMDD' (6 digits, e.g., 740125). If we cannot map it cleanly, output YYMMDD base representation.
-If no training hours is found, leave it as an empty string.`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: [imagePart, promptMessage],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              assistantName: { type: Type.STRING, description: "정확한 성명/이름" },
-              birthDate: { type: Type.STRING, description: "활동지원사 생년월일 (예시: 740125)" },
-              courseName: { type: Type.STRING, description: "교육명칭 또는 과정명 (예시: '장애인활동지원사 보수교육')" },
-              trainingHours: { type: Type.STRING, description: "교육 이수 시간 (예시: '8시간' 또는 '4시간')" }
-            },
-            required: ["assistantName", "birthDate", "courseName", "trainingHours"]
-          }
-        }
+        body: JSON.stringify({ imageBase64: imgBase64 }),
       });
 
-      if (!response.text) {
-        throw new Error("No response returned from Gemini API.");
+      const textRes = await response.text();
+      let data;
+      try {
+        data = JSON.parse(textRes);
+      } catch {
+        throw new Error("서버 분석 중 응답 파싱 오류가 발생했습니다.");
       }
 
-      const data = JSON.parse(response.text.trim());
+      if (!response.ok) {
+        throw new Error(data.error || 'Gemini 분석 중 오류 발생');
+      }
+
       const extractedCourse = data.courseName || "";
       const extractedHours = data.trainingHours || "";
       const extractedName = data.assistantName || "";

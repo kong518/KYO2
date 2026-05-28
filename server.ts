@@ -21,6 +21,28 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "submissions.json");
+const CONFIG_FILE = path.join(DATA_DIR, "config.json");
+
+// Read config
+async function readConfig() {
+  await ensureDataFile();
+  try {
+    const data = await fs.readFile(CONFIG_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+// Write config
+async function writeConfig(config: any) {
+  await ensureDataFile();
+  try {
+    await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
+  } catch (error) {
+    console.error("Failed to write config:", error);
+  }
+}
 
 // Ensure data directory and file exist
 async function ensureDataFile() {
@@ -146,6 +168,33 @@ app.delete("/api/submissions/:id", async (req, res) => {
   }
 });
 
+// API: Get app configuration status
+app.get("/api/settings/config", async (req, res) => {
+  try {
+    const config = await readConfig();
+    const hasKey = !!(process.env.GEMINI_API_KEY || config.geminiApiKey);
+    res.json({ hasKey });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Set server-side Gemini API key
+app.post("/api/settings/apikey", async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    if (apiKey === undefined) {
+      return res.status(400).json({ error: "API Key value is missing." });
+    }
+    const config = await readConfig();
+    config.geminiApiKey = apiKey.trim();
+    await writeConfig(config);
+    res.json({ success: true, message: "Gemini API Key가 서버 앱 설정에 성공적으로 저장되었습니다." });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // API: Gemini Certificate OCR Parser
 app.post("/api/submissions/ocr", async (req, res) => {
   try {
@@ -154,10 +203,14 @@ app.post("/api/submissions/ocr", async (req, res) => {
       return res.status(400).json({ error: "수료증 이미지가 누락되었습니다." });
     }
 
+    // Load API Key from environment or local config stored on server
+    const config = await readConfig();
+    const apiKey = process.env.GEMINI_API_KEY || config.geminiApiKey || "";
+
     // Check if GEMINI_API_KEY is available
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ 
-        error: "Gemini API 키가 서버에 구성되지 않았습니다. 수동으로 입력해 주세요." 
+    if (!apiKey) {
+      return res.status(505).json({ 
+        error: "Gemini API 키가 서버 앱에 안전하게 저장되어 있지 않습니다. 우측 상단의 [⚙️ API Key 설정] 버튼을 눌러 먼저 API Key를 등록 및 저장해 주세요." 
       });
     }
 
@@ -172,7 +225,7 @@ app.post("/api/submissions/ocr", async (req, res) => {
     }
 
     const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+      apiKey: apiKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
