@@ -400,10 +400,11 @@ If no training hours option is visible, leave it as an empty string.`
             </h3>
           </div>
 
-          <p className="text-xs text-slate-500 mt-1 leading-relaxed font-sans">
-            사진이나 PDF 형식의 교육 수료증을 등록하시면, AI 인공지능이 
-            <span className="font-bold text-indigo-600"> [이름, 교육명, 교육시간]</span>을 수료증에서 찾아 자동으로 적어 줍니다.
-            활동지원사님께서는 정보 확인 후 <span className="font-bold text-indigo-600">[생년월일(6자리)]</span>만 본인이 직접 적어 주시면 수료가 승인됩니다.
+          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed font-sans">
+            사진이나 PDF형식의 교육 수료증을 등록해주세요.{" "}
+            <span className="font-bold text-indigo-600">
+              AI 인공지능이 이름, 교육명, 교육시간을 자동으로 적어줍니다. 생년월일(6자리)만 본인이 입력해주세요. 정보 확인 후 밑에 "수료증 전송하기"를 꼭 눌러서 제출해주세요.
+            </span>
           </p>
         </div>
 
