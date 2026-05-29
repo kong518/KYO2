@@ -32,6 +32,11 @@ import {
 import AssistantForm from "./components/AssistantForm";
 import { EducationCertificate, EducationStats } from "./types";
 
+const isPdfFile = (imgUrl: string | undefined | null) => {
+  if (!imgUrl) return false;
+  return imgUrl.startsWith("data:application/pdf") || imgUrl.includes(".pdf");
+};
+
 // Firebase Applet Integration
 import { db, getStoredGeminiApiKey } from "./firebase";
 import { 
@@ -1037,7 +1042,7 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                           <div className="bg-slate-50 border border-slate-200/80 p-2.5 relative flex flex-col items-center justify-center min-h-[225px] overflow-hidden rounded-xl bg-slate-50">
                             {selectedSubmission.certificateImage ? (
                               <>
-                                {selectedSubmission.certificateImage.startsWith("data:application/pdf") ? (
+                                {isPdfFile(selectedSubmission.certificateImage) ? (
                                   <iframe
                                     src={selectedSubmission.certificateImage}
                                     className="w-full h-[220px] rounded-lg border border-slate-150 bg-white"
@@ -1379,7 +1384,7 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                       className={`px-3 py-1.5 text-[10px] font-semibold rounded-lg border transition-all cursor-pointer ${
                         subFilter === "all"
                           ? "bg-slate-800 border-slate-800 text-white"
-                          : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                          : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
                       }`}
                     >
                       전체 ({submissions.length})
@@ -1422,7 +1427,7 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                             <div className="bg-white border border-slate-100 rounded-lg h-44 overflow-hidden relative flex items-center justify-center select-none group">
                               {sub.certificateImage ? (
                                 <>
-                                  {sub.certificateImage.startsWith("data:application/pdf") ? (
+                                  {isPdfFile(sub.certificateImage) ? (
                                     <div className="w-full h-full p-2 bg-slate-50 flex flex-col items-center justify-center text-center">
                                       <FileText className="w-10 h-10 text-slate-400 mb-1" />
                                       <span className="text-[10px] font-semibold text-slate-550 truncate max-w-full px-2">PDF 수료증 문서</span>
@@ -1450,9 +1455,9 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                             <div className="space-y-1 text-xs">
                               <div className="flex items-center justify-between">
                                 <span className="font-bold text-slate-850 truncate">{sub.assistantName}</span>
-                                <span className="text-[10px] text-slate-405 font-mono">{sub.birthDate}</span>
+                                <span className="text-[10px] text-slate-400 font-mono">{sub.birthDate}</span>
                               </div>
-                              <p className="text-[11px] text-slate-500 truncate" title={sub.courseName || '과정명 미지정'}>
+                              <p className="text-[11px] text-slate-500 truncate" title={sub.courseName || "과정명 미지정"}>
                                 {sub.courseName || <span className="text-slate-300 italic">과정명 미지정</span>}
                               </p>
                               <div className="flex items-center justify-between text-[10px] text-slate-400">
@@ -1498,124 +1503,6 @@ Return the parsed values in Korean language inside the requested JSON schema.`
         </AnimatePresence>
       </main>
 
-      {/* Lightbox zoomed modal */}
-      <AnimatePresence>
-        {zoomedImage && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setZoomedImage(null)}
-            className="fixed inset-0 z-50 bg-slate-900/90 flex items-center justify-center p-4 cursor-zoom-out backdrop-blur-xs"
-            id="lightbox-panel bg"
-          >
-            <button
-              id="lightbox-close-btn"
-              onClick={() => setZoomedImage(null)}
-              className="absolute top-6 right-6 text-white hover:text-slate-200 p-2.5 bg-slate-800 border border-slate-700 rounded-xl cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <motion.div
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.95 }}
-              className="max-w-4xl max-h-[85vh] overflow-hidden"
-              id="lightbox-scroller"
-            >
-              {zoomedImage.startsWith("data:application/pdf") ? (
-                <iframe
-                  src={zoomedImage}
-                  className="w-[85vw] h-[80vh] rounded-2xl border border-slate-700 bg-white shadow-2xl"
-                  title="수료증 상세 보기"
-                />
-              ) : (
-                <img
-                  id="lightbox-img-large"
-                  src={zoomedImage}
-                  alt="Detailed Certificate Zoom"
-                  className="max-w-full max-h-[85vh] object-contain border border-slate-100 rounded-2xl shadow-2xl"
-                  referrerPolicy="no-referrer"
-                />
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* API Key configuration modal */}
-      <AnimatePresence>
-        {showApiKeySetting && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
-            id="apikey-modal-overlay"
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 10 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 10 }}
-              className="bg-white w-full max-w-md rounded-2xl border border-slate-200 p-6 shadow-2xl space-y-4"
-              id="apikey-modal-textbox"
-            >
-              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2 text-indigo-600">
-                  <Settings className="w-5 h-5" />
-                  <h4 className="text-sm font-bold text-slate-800 font-sans">Gemini API Key 설정</h4>
-                </div>
-                <button
-                  onClick={() => setShowApiKeySetting(false)}
-                  className="text-slate-400 hover:text-slate-600 p-1"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                <p className="text-xs text-slate-500 leading-relaxed font-sans">
-                  본 애플리케이션의 <strong>AI 수료증 자동 분석 기능</strong>은 Google Gemini API를 사용합니다. 
-                  우측 API 키를 안전하게 브라우저 로컬 스토리지에만 저장하여 완전히 무료로 분석을 수행할 수 있습니다.
-                </p>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 block font-sans">Gemini API Key 입력</label>
-                  <input
-                    type="password"
-                    value={tempApiKey}
-                    onChange={(e) => setTempApiKey(e.target.value)}
-                    placeholder="AIzaSy..."
-                    className="w-full px-3 py-2 border border-slate-200 bg-slate-50/50 rounded-xl text-xs font-mono focus:outline-none focus:border-indigo-500 focus:bg-white transition-all font-semibold"
-                  />
-                </div>
-
-                <p className="text-[10px] text-slate-400 italic font-sans">
-                  * 입력하신 API Key는 외부 서버로 전송되지 않으며, 사용자 본인의 로컬 브라우저 내에만 암호화 데이터 형태로 보관됩니다.
-                  <br />
-                  * <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-indigo-600 font-semibold hover:underline">Google AI Studio</a>에서 1분 만에 무료 API Key를 바로 발급받아 등록할 수 있습니다.
-                </p>
-              </div>
-
-              <div className="flex gap-2 justify-end border-t border-slate-100 pt-3 font-sans">
-                <button
-                  onClick={() => setShowApiKeySetting(false)}
-                  className="px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
-                >
-                  취소
-                </button>
-                <button
-                  onClick={() => handleSaveApiKeySetting(tempApiKey)}
-                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm cursor-pointer"
-                >
-                  저장하기
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* App Footer banner design credits */}
       <footer className="bg-slate-50 border-t border-slate-200/60 py-8 text-center text-xs text-slate-400 font-medium space-y-3 mt-12" id="app-footer">
         <div className="flex justify-center items-center gap-3">
@@ -1642,7 +1529,7 @@ Return the parsed values in Korean language inside the requested JSON schema.`
           PRINTER PRINTING SHEET (HIDDEN ON SCREEN, ONLY FOR PRINT)
           ────────────────────────────────────────────── */}
       <div className="hidden print:block font-sans min-h-screen text-slate-900 bg-white" id="printing-sheet">
-        <div className="p-8 w-full block">
+        <div className={`${printTarget === "ledger" ? "p-8" : "p-0"} w-full block`}>
           {printTarget === "ledger" ? (
             <>
               {/* Header section designed beautifully for printed reports */}
@@ -1742,84 +1629,40 @@ Return the parsed values in Korean language inside the requested JSON schema.`
             </>
           ) : (
             <>
-              {/* Header section designed beautifully for printed reports */}
-              <div className="text-center pb-6 border-b-2 border-slate-850 mb-6 font-sans">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900">장애인활동지원 교육 수료증 증빙서 파일목록</h1>
-                <p className="text-[10px] text-slate-505 mt-1 font-mono">
-                  수원시장애인종합복지관 | 출력 범위: {subFilter === "all" ? "전체 등록자" : subFilter === "completed" ? "이수완료자" : "검토대기자"} (총 {filteredSubmissions.length}명) | 출력 일자: {new Date().toLocaleDateString()}
-                </p>
-              </div>
-
               {filteredSubmissions.length === 0 ? (
                 <div className="text-center py-20 text-slate-400 font-sans border border-slate-200 rounded-lg">
                   출력할 수 있는 증빙 문서가 없습니다.
                 </div>
               ) : (
-                <div className="space-y-12">
-                  {filteredSubmissions.map((sub, index) => (
+                <div className="space-y-0">
+                  {filteredSubmissions.map((sub) => (
                     <div 
                       key={sub.id} 
-                      className="border-2 border-slate-300 p-6 rounded-2xl bg-white space-y-4 shadow-sm break-after-page page-break-after-always"
+                      className="w-full h-screen block break-after-page page-break-after-always flex items-center justify-center p-0 bg-white"
                       style={{ pageBreakAfter: "always", breakAfter: "page" }}
                     >
-                      {/* Document Meta Row */}
-                      <div className="flex justify-between items-center border-b border-slate-200 pb-2.5 text-xs font-sans">
-                        <div>
-                          <span className="bg-slate-900 text-white font-extrabold px-2.5 py-1 rounded-sm mr-2.5">증빙서 #{index + 1}</span>
-                          <span className="font-extrabold text-base text-slate-900">활동지원사: {sub.assistantName}</span>
-                          <span className="text-slate-500 font-mono font-bold ml-1">({sub.birthDate})</span>
-                        </div>
-                        <div className="text-right text-slate-500 font-mono font-medium">
-                          <span>제출일: {new Date(sub.submittedAt).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-
-                      {/* Course summary */}
-                      <div className="grid grid-cols-2 gap-4 text-xs font-sans p-4 bg-slate-50 border border-slate-205 rounded-xl">
-                        <div>
-                          <p className="text-slate-400 font-bold block">이수 교육과정명</p>
-                          <p className="font-extrabold text-slate-800 text-sm mt-0.5">{sub.courseName || "과정명 미지정"}</p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <p className="text-slate-400 font-bold block">인정 교육시간</p>
-                            <p className="font-extrabold text-indigo-700 text-sm mt-0.5">{sub.trainingHours ? (sub.trainingHours.includes("시간") ? sub.trainingHours : `${sub.trainingHours}시간`) : "시간 미지정"}</p>
+                      {sub.certificateImage ? (
+                        isPdfFile(sub.certificateImage) ? (
+                          <div className="text-center py-32 font-sans text-slate-400 text-sm">
+                            <FileText className="w-16 h-16 text-slate-300 mx-auto mb-3" />
+                            PDF 형식의 수료증 문서입니다. (활동지원사: {sub.assistantName})<br/>
+                            (브라우저 인쇄 설정에서 무늬/배경 이미지 출력을 체크해 주십시오.)
                           </div>
-                          <div>
-                            <p className="text-slate-400 font-bold block">승인 상태</p>
-                            <p className="font-extrabold text-slate-800 text-sm mt-0.5">{sub.isCompleted ? "이수 완료(승인)" : "검토 대기중"}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Certificate Visual Image */}
-                      <div className="border border-slate-200 p-3 flex items-center justify-center max-h-[72vh] overflow-hidden rounded-xl bg-slate-50">
-                        {sub.certificateImage ? (
-                          sub.certificateImage.startsWith("data:application/pdf") ? (
-                            <div className="text-center py-24 font-sans text-slate-400 text-xs">
-                              <FileText className="w-16 h-16 text-slate-300 mx-auto mb-3" />
-                              PDF 형식의 수료증 문서입니다.<br/>
-                              (브라우저 인쇄 설정에서 무늬/배경 이미지 출력을 체크해 주십시오.)
-                            </div>
-                          ) : (
-                            <img
-                              src={sub.certificateImage}
-                              alt={`${sub.assistantName} 교육 수료증`}
-                              className="max-h-[68vh] object-contain max-w-full rounded-lg"
-                              referrerPolicy="no-referrer"
-                            />
-                          )
                         ) : (
-                          <div className="text-slate-350 italic font-sans py-24 text-xs">수료증 파일 원본이 존재하지 않습니다.</div>
-                        )}
-                      </div>
+                          <img
+                            src={sub.certificateImage}
+                            alt={`${sub.assistantName} 교육 수료증`}
+                            className="max-h-screen object-contain max-w-full m-auto"
+                            referrerPolicy="no-referrer"
+                          />
+                        )
+                      ) : (
+                        <div className="text-slate-350 italic font-sans py-24 text-sm text-center">
+                          수료증 파일 원본이 존재하지 않습니다. (활동지원사: {sub.assistantName})
+                        </div>
+                      )}
                     </div>
                   ))}
-                  
-                  {/* Ledger summary footer */}
-                  <div className="text-center text-xs font-semibold text-slate-400 font-sans border-t border-slate-100 pt-6">
-                    수원시장애인종합복지관
-                  </div>
                 </div>
               )}
             </>
