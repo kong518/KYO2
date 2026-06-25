@@ -322,26 +322,73 @@ Return the parsed values in Korean language inside the requested JSON schema.
 If the birth date is found, represent it as 'YYMMDD' (6 digits, e.g., 740125). If we cannot map it cleanly, output YYMMDD base representation.
 If no training hours is found, leave it as an empty string.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: [imagePart, promptMessage],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            assistantName: { type: Type.STRING, description: "정확한 성명/이름" },
-            birthDate: { type: Type.STRING, description: "활동지원사 생년월일 (예시: 740125)" },
-            courseName: { type: Type.STRING, description: "교육명칭 또는 과정명 (예시: '장애인활동지원사 보수교육')" },
-            trainingHours: { type: Type.STRING, description: "교육 이수 시간 (예시: '8시간' 또는 '4시간')" }
-          },
-          required: ["assistantName", "birthDate", "courseName", "trainingHours"]
+    const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+    let response: any = null;
+    let lastError: any = null;
+
+    for (const currentModel of modelsToTry) {
+      let attempt = 0;
+      const maxRetries = 3;
+      const initialDelay = 1000;
+
+      console.log(`[Gemini OCR] Trying analysis using model: ${currentModel}`);
+      
+      while (attempt < maxRetries) {
+        try {
+          response = await ai.models.generateContent({
+            model: currentModel,
+            contents: [imagePart, promptMessage],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  assistantName: { type: Type.STRING, description: "정확한 성명/이름" },
+                  birthDate: { type: Type.STRING, description: "활동지원사 생년월일 (예시: 740125)" },
+                  courseName: { type: Type.STRING, description: "교육명칭 또는 과정명 (예시: '장애인활동지원사 보수교육')" },
+                  trainingHours: { type: Type.STRING, description: "교육 이수 시간 (예시: '8시간' 또는 '4시간')" }
+                },
+                required: ["assistantName", "birthDate", "courseName", "trainingHours"]
+              }
+            }
+          });
+          break; // Succeeded! Break the retry loop
+        } catch (error: any) {
+          attempt++;
+          lastError = error;
+          const errMsg = error.message || "";
+          console.warn(`[Gemini OCR] Model ${currentModel} Attempt ${attempt}/${maxRetries} failed:`, errMsg);
+          
+          const isRetryable = 
+            error.status === "UNAVAILABLE" || 
+            error.code === 503 ||
+            error.status === "RESOURCE_EXHAUSTED" || 
+            error.code === 429 ||
+            errMsg.includes("503") || 
+            errMsg.includes("UNAVAILABLE") || 
+            errMsg.includes("high demand") ||
+            errMsg.includes("429") ||
+            errMsg.includes("RESOURCE_EXHAUSTED") ||
+            errMsg.includes("rate limit") ||
+            errMsg.includes("overloaded");
+
+          if (isRetryable && attempt < maxRetries) {
+            const delay = initialDelay * Math.pow(2, attempt - 1) * (0.8 + Math.random() * 0.4);
+            console.log(`[Gemini OCR] Retrying in ${Math.round(delay)}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            break; // Non-retryable error or exhausted retries for this model; break to try next model
+          }
         }
       }
-    });
 
-    if (!response.text) {
-      throw new Error("No response returned from Gemini API.");
+      if (response && response.text) {
+        break; // Successfully got response, stop trying other models
+      }
+    }
+
+    if (!response || !response.text) {
+      throw lastError || new Error("No response returned from Gemini API after retrying with fallback models.");
     }
 
     const parsedData = JSON.parse(response.text.trim());

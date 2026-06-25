@@ -269,11 +269,24 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
             },
           };
 
-          const response = await ai.models.generateContent({
-            model: "gemini-3.5-flash",
-            contents: [
-              dataPart,
-              `Please analyze this uploaded online training certificate. 
+          const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+          let response: any = null;
+          let lastError: any = null;
+
+          for (const currentModel of modelsToTry) {
+            let attempt = 0;
+            const maxRetries = 3;
+            const initialDelay = 1000;
+
+            console.log(`[Client Gemini OCR] Trying direct analysis using model: ${currentModel}`);
+            
+            while (attempt < maxRetries) {
+              try {
+                response = await ai.models.generateContent({
+                  model: currentModel,
+                  contents: [
+                    dataPart,
+                    `Please analyze this uploaded online training certificate. 
 Our target is to extract information about the activity assistant (활동지원사) who completed the training.
 Extract the following details from this image/PDF:
 1. Name (성명/이름)
@@ -283,24 +296,58 @@ Extract the following details from this image/PDF:
 
 Return the parsed values in Korean language inside the requested JSON schema.
 If no training hours option is visible, leave it as an empty string.`
-            ],
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  assistantName: { type: Type.STRING, description: "정확한 성명/이름" },
-                  birthDate: { type: Type.STRING, description: "활동지원사 생년월일 (예시: 740125)" },
-                  courseName: { type: Type.STRING, description: "교육과정명 또는 교육명 (예시: 복지교육)" },
-                  trainingHours: { type: Type.STRING, description: "교육 이수 시간 (예시: 8시간)" }
-                },
-                required: ["assistantName", "birthDate", "courseName", "trainingHours"]
+                  ],
+                  config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                      type: Type.OBJECT,
+                      properties: {
+                        assistantName: { type: Type.STRING, description: "정확한 성명/이름" },
+                        birthDate: { type: Type.STRING, description: "활동지원사 생년월일 (예시: 740125)" },
+                        courseName: { type: Type.STRING, description: "교육과정명 또는 교육명 (예시: 복지교육)" },
+                        trainingHours: { type: Type.STRING, description: "교육 이수 시간 (예시: 8시간)" }
+                      },
+                      required: ["assistantName", "birthDate", "courseName", "trainingHours"]
+                    }
+                  }
+                });
+                break; // Succeeded! Break retry loop
+              } catch (error: any) {
+                attempt++;
+                lastError = error;
+                const errMsg = error.message || "";
+                console.warn(`[Client Gemini OCR] Model ${currentModel} Attempt ${attempt}/${maxRetries} failed:`, errMsg);
+
+                const isRetryable = 
+                  error.status === "UNAVAILABLE" || 
+                  error.code === 503 ||
+                  error.status === "RESOURCE_EXHAUSTED" || 
+                  error.code === 429 ||
+                  errMsg.includes("503") || 
+                  errMsg.includes("UNAVAILABLE") || 
+                  errMsg.includes("high demand") ||
+                  errMsg.includes("429") ||
+                  errMsg.includes("RESOURCE_EXHAUSTED") ||
+                  errMsg.includes("rate limit") ||
+                  errMsg.includes("overloaded");
+
+                if (isRetryable && attempt < maxRetries) {
+                  const delay = initialDelay * Math.pow(2, attempt - 1) * (0.8 + Math.random() * 0.4);
+                  console.log(`[Client Gemini OCR] Retrying in ${Math.round(delay)}ms...`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                  break; // Non-retryable error or exhausted retries for this model
+                }
               }
             }
-          });
 
-          if (!response.text) {
-            throw new Error("Gemini 분석 엔진에서 응답이 생성되지 않았습니다.");
+            if (response && response.text) {
+              break; // Successfully got response, stop trying other models
+            }
+          }
+
+          if (!response || !response.text) {
+            throw lastError || new Error("Gemini 분석 엔진에서 응답이 생성되지 않았습니다 (시도된 모든 모델 실패).");
           }
           parsedData = JSON.parse(response.text.trim());
         } else {
