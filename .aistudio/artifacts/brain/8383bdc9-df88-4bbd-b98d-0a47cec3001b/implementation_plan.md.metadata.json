@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for transitioning to a multi-role system (Public Submitters / Admin Portal). Includes Google OAuth for admins, data isolation, and both individual/batch AI processing workflows.",
+  "updatedAt":  "2026-10-21T00:06:28.177370916Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

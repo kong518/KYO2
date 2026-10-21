@@ -54,3 +54,27 @@ export async function getStoredGeminiApiKey(): Promise<string> {
   return "";
 }
 
+export async function saveStoredGeminiApiKey(key: string): Promise<void> {
+  const cleanKey = key.trim();
+  if (cleanKey) {
+    localStorage.setItem("USER_GEMINI_API_KEY", cleanKey);
+    try {
+      const { setDoc } = await import("firebase/firestore");
+      const docRef = doc(db, "settings", "config");
+      await setDoc(docRef, { geminiApiKey: cleanKey, updatedAt: new Date().toISOString() }, { merge: true });
+    } catch (err) {
+      console.warn("Failed to sync Gemini API Key to Firestore:", err);
+    }
+  }
+}
+
+export async function removeStoredGeminiApiKey(): Promise<void> {
+  localStorage.removeItem("USER_GEMINI_API_KEY");
+  try {
+    const { setDoc } = await import("firebase/firestore");
+    const docRef = doc(db, "settings", "config");
+    await setDoc(docRef, { geminiApiKey: "", updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.warn("Failed to clear Gemini API Key in Firestore:", err);
+  }
+}

@@ -27,9 +27,26 @@ import {
   Lock,
   LogOut,
   Settings,
-  Printer
+  Printer,
+  Download,
+  Smartphone,
+  Monitor,
+  Check,
+  Share2,
+  ExternalLink,
+  Laptop,
+  AlertCircle,
+  Loader2,
+  Key,
+  Ban,
+  Shield,
+  BookOpen
 } from "lucide-react";
 import AssistantForm from "./components/AssistantForm";
+import ApiKeyModal from "./components/ApiKeyModal";
+import BatchAiVerificationModal from "./components/BatchAiVerificationModal";
+import UserManagementView from "./components/UserManagementView";
+import { analyzeCertificateWithGemini } from "./services/aiVerification";
 import { EducationCertificate, EducationStats } from "./types";
 
 const isPdfFile = (imgUrl: string | undefined | null) => {
@@ -37,8 +54,7 @@ const isPdfFile = (imgUrl: string | undefined | null) => {
   return imgUrl.startsWith("data:application/pdf") || imgUrl.includes(".pdf");
 };
 
-// Firebase Applet Integration
-import { db, getStoredGeminiApiKey } from "./firebase";
+import { db, getStoredGeminiApiKey, saveStoredGeminiApiKey, auth, googleProvider } from "./firebase";
 import { 
   collection, 
   query, 
@@ -48,8 +64,10 @@ import {
   updateDoc, 
   deleteDoc, 
   doc,
-  setDoc
+  setDoc,
+  where
 } from "firebase/firestore";
+import { signInWithPopup, signOut } from "firebase/auth";
 
 // Google GenAI Platform
 
@@ -64,14 +82,25 @@ export default function App() {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
     return sessionStorage.getItem("isAdminLoggedIn") === "true";
   });
-  const [authInitialized, setAuthInitialized] = useState<boolean>(true);
-  const [showApiKeySetting, setShowApiKeySetting] = useState<boolean>(false);
-  const [tempApiKey, setTempApiKey] = useState<string>("");
+  const [currentAdminName, setCurrentAdminName] = useState<string>(() => {
+    return sessionStorage.getItem("adminUserName") || "admin";
+  });
+  const [adminName, setAdminName] = useState<string>("");
   const [adminPasscode, setAdminPasscode] = useState<string>("");
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => {
+    return localStorage.getItem("USER_GEMINI_API_KEY") || "";
+  });
+  const [showApiKeyModal, setShowApiKeyModal] = useState<boolean>(false);
+  const [isApiKeyMandatory, setIsApiKeyMandatory] = useState<boolean>(false);
+  const [showBatchAiModal, setShowBatchAiModal] = useState<boolean>(false);
+  const [isRegistering, setIsRegistering] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
+  const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
 
   // Administrative Control States
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
-  const [adminViewMode, setAdminViewMode] = useState<"inspector" | "list" | "gallery">("inspector");
+  const [adminViewMode, setAdminViewMode] = useState<"inspector" | "list" | "gallery" | "users">("inspector");
   const [printTarget, setPrintTarget] = useState<"ledger" | "photos">("ledger");
   
   // Verification form states for current selection
@@ -86,47 +115,247 @@ export default function App() {
 
   // AI OCR States
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState<boolean>(false);
+  const [singleAiLoading, setSingleAiLoading] = useState<boolean>(false);
   const [aiFeedback, setAiFeedback] = useState<{ type: "success" | "error" | "mismatch"; message: string } | null>(null);
 
-  // Load API Key from local storage at start
-  useEffect(() => {
-    const savedKey = localStorage.getItem("USER_GEMINI_API_KEY") || "";
-    setTempApiKey(savedKey);
-  }, []);
+  // PWA Desktop / Mobile Install States
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const [isAppInstalled, setIsAppInstalled] = useState<boolean>(false);
+  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+  const [installGuideTab, setInstallGuideTab] = useState<"pc" | "android" | "ios">("pc");
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
-  // Track Admin Login Session Changes
+  // Load API Key on mount and prompt if missing in admin mode
+  useEffect(() => {
+    const initKey = async () => {
+      const key = await getStoredGeminiApiKey();
+      if (key) {
+        setGeminiApiKey(key);
+      } else if (isAdminLoggedIn && userMode === "admin") {
+        setShowApiKeyModal(true);
+        setIsApiKeyMandatory(true);
+      }
+    };
+    initKey();
+  }, [isAdminLoggedIn, userMode]);
+
   useEffect(() => {
     if (isAdminLoggedIn) {
       fetchSubmissions(true);
-    } else {
-      setSubmissions([]);
-      setSelectedSubmissionId(null);
     }
   }, [isAdminLoggedIn]);
 
-  const handleAdminLogin = async () => {
-    if (adminPasscode.trim() !== "5612") {
-      alert("올바르지 않은 관리자 비밀번호입니다.");
+  useEffect(() => {
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+  }, []);
+
+  const handleCopyLink = () => {
+    const url = window.location.origin.includes("ais-dev-")
+      ? window.location.origin.replace("ais-dev-", "ais-pre-")
+      : window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    });
+  };
+
+  const handleAdminAuth = async () => {
+    setAuthError(null);
+    setAuthSuccess(null);
+
+    const name = adminName.trim();
+    const pass = adminPasscode.trim();
+
+    if (!name || !pass) {
+      setAuthError("이름(아이디)과 비밀번호를 모두 입력해 주세요.");
       return;
     }
-    setLoading(true);
+
+    setIsAuthenticating(true);
+
     try {
+      if (isRegistering) {
+        // Registering a new admin account
+        if (name.toLowerCase() === "admin") {
+          setAuthError("'admin'은 시스템 마스터 관리자 ID로 이미 예약되어 있습니다. 다른 관리자 이름을 사용해 주세요.");
+          setIsAuthenticating(false);
+          return;
+        }
+
+        const q = query(collection(db, "admins"), where("name", "==", name));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          setAuthError("이미 등록되어 있는 관리자 이름입니다. 기존 계정으로 로그인하시거나 다른 이름을 사용해 주세요.");
+          setIsAuthenticating(false);
+          return;
+        }
+
+        await addDoc(collection(db, "admins"), {
+          name: name,
+          password: pass,
+          role: "admin",
+          isBanned: false,
+          createdAt: new Date().toISOString()
+        });
+
+        setAuthSuccess(`'${name}' 관리자 계정이 성공적으로 등록되었습니다! 대시보드로 즉시 입장합니다.`);
+        sessionStorage.setItem("isAdminLoggedIn", "true");
+        sessionStorage.setItem("adminUserName", name);
+        setCurrentAdminName(name);
+
+        setTimeout(() => {
+          setIsAdminLoggedIn(true);
+          setUserMode("admin");
+          setIsRegistering(false);
+          setIsAuthenticating(false);
+          fetchSubmissions(true);
+          // Check API Key
+          const currentKey = localStorage.getItem("USER_GEMINI_API_KEY") || "";
+          if (!currentKey) {
+            setShowApiKeyModal(true);
+            setIsApiKeyMandatory(true);
+          }
+        }, 500);
+        return;
+      }
+
+      // Login Mode
+      // 1. Check Master Admin Credential (admin / 1130 or 관리자 / 1130)
+      const isMaster = (name.toLowerCase() === "admin" || name === "관리자") && pass === "1130";
+
+      if (isMaster) {
+        setAuthSuccess("마스터 관리자(admin) 인증 완료! 대시보드로 이동합니다...");
+        sessionStorage.setItem("isAdminLoggedIn", "true");
+        sessionStorage.setItem("adminUserName", "admin (마스터)");
+        setCurrentAdminName("admin (마스터)");
+
+        // Sync master record to Firestore admins collection in background if not yet present
+        try {
+          const qMaster = query(collection(db, "admins"), where("name", "==", "admin"));
+          const masterSnap = await getDocs(qMaster);
+          if (masterSnap.empty) {
+            await addDoc(collection(db, "admins"), {
+              name: "admin",
+              password: "1130",
+              role: "master",
+              isBanned: false,
+              createdAt: new Date().toISOString()
+            });
+          }
+        } catch (e) {
+          console.warn("Master admin record sync note:", e);
+        }
+
+        setTimeout(() => {
+          setIsAdminLoggedIn(true);
+          setUserMode("admin");
+          setIsAuthenticating(false);
+          fetchSubmissions(true);
+          // Check API Key
+          const currentKey = localStorage.getItem("USER_GEMINI_API_KEY") || "";
+          if (!currentKey) {
+            setShowApiKeyModal(true);
+            setIsApiKeyMandatory(true);
+          }
+        }, 400);
+        return;
+      }
+
+      // 2. Check Custom Registered Admins from Firestore
+      const q = query(collection(db, "admins"), where("name", "==", name));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        setAuthError(
+          "등록되지 않은 관리자 계정입니다. 계정 정보를 확인하시거나, 아래 [계정이 없으신가요? 신규 등록]을 통해 계정을 생성해 주세요."
+        );
+        setIsAuthenticating(false);
+        return;
+      }
+
+      const matchedDoc = querySnapshot.docs.find(d => d.data().password === pass);
+      if (!matchedDoc) {
+        setAuthError("비밀번호가 일치하지 않습니다. 다시 확인해 주세요.");
+        setIsAuthenticating(false);
+        return;
+      }
+
+      // 3. Check if user has been banned by master admin
+      const userData = matchedDoc.data();
+      if (userData.isBanned) {
+        setAuthError("해당 계정은 마스터 관리자에 의해 차단(벤)되었습니다. 관리자에게 문의해 주세요.");
+        setIsAuthenticating(false);
+        return;
+      }
+
+      // Match found!
+      setAuthSuccess(`'${name}' 관리자님 환영합니다! 대시보드로 이동합니다.`);
       sessionStorage.setItem("isAdminLoggedIn", "true");
-      setIsAdminLoggedIn(true);
-      setAdminPasscode("");
-    } catch (error: any) {
-      console.error("Login failed:", error);
-      alert("로그인에 실패했습니다: " + (error.message || ""));
-    } finally {
-      setLoading(false);
+      sessionStorage.setItem("adminUserName", name);
+      setCurrentAdminName(name);
+
+      setTimeout(() => {
+        setIsAdminLoggedIn(true);
+        setUserMode("admin");
+        setIsAuthenticating(false);
+        fetchSubmissions(true);
+        // Check API Key
+        const currentKey = localStorage.getItem("USER_GEMINI_API_KEY") || "";
+        if (!currentKey) {
+          setShowApiKeyModal(true);
+          setIsApiKeyMandatory(true);
+        }
+      }, 400);
+
+    } catch (err: any) {
+      console.error("Admin auth error:", err);
+      // Fallback: If network error but user entered master admin admin/1130:
+      if ((name.toLowerCase() === "admin" || name === "관리자") && pass === "1130") {
+        setAuthSuccess("마스터 관리자(admin) 인증 완료! 대시보드로 이동합니다.");
+        sessionStorage.setItem("isAdminLoggedIn", "true");
+        sessionStorage.setItem("adminUserName", "admin (마스터)");
+        setCurrentAdminName("admin (마스터)");
+        setTimeout(() => {
+          setIsAdminLoggedIn(true);
+          setUserMode("admin");
+          setIsAuthenticating(false);
+          fetchSubmissions(true);
+        }, 400);
+        return;
+      }
+
+      setAuthError("인증 처리 중 문제가 발생했습니다: " + (err.message || "네트워크 상태를 확인해주세요."));
+      setIsAuthenticating(false);
     }
   };
 
-  const handleAdminLogout = async () => {
-    if (confirm("대시보드에서 로그아웃하시겠습니까?")) {
-      sessionStorage.removeItem("isAdminLoggedIn");
-      setIsAdminLoggedIn(false);
-      setUserMode("assistant");
+  const handleAdminLogout = () => {
+    sessionStorage.removeItem("isAdminLoggedIn");
+    sessionStorage.removeItem("adminUserName");
+    setIsAdminLoggedIn(false);
+    setUserMode("assistant");
+    setAdminName("");
+    setAdminPasscode("");
+    setAuthError(null);
+    setAuthSuccess(null);
+  };
+
+  const handleInstallAppClick = () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      deferredInstallPrompt.userChoice.then((choiceResult: any) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('User accepted the install prompt');
+        }
+        setDeferredInstallPrompt(null);
+      });
+    } else {
+      setShowInstallModal(true);
     }
   };
 
@@ -214,8 +443,6 @@ export default function App() {
     assistantName: string; 
     birthDate: string; 
     certificateImage: string;
-    courseName?: string;
-    trainingHours?: string;
   }) => {
     try {
       const submitData = {
@@ -224,8 +451,8 @@ export default function App() {
         certificateImage: newSub.certificateImage,
         submittedAt: new Date().toISOString(),
         isCompleted: false,
-        trainingHours: newSub.trainingHours || "",
-        courseName: newSub.courseName || "",
+        trainingHours: "",
+        courseName: "",
         managerNotes: "",
       };
 
@@ -326,51 +553,76 @@ export default function App() {
     setAiFeedback(null);
   };
 
+  const handleSingleAiAnalysis = async (sub: EducationCertificate) => {
+    if (!geminiApiKey) {
+      setShowApiKeyModal(true);
+      setIsApiKeyMandatory(true);
+      return;
+    }
+    setSingleAiLoading(true);
+    setAiFeedback(null);
+    try {
+      const res = await analyzeCertificateWithGemini(sub.certificateImage, geminiApiKey);
+      if (res.success) {
+        const nextCourse = res.courseName || sub.courseName || "장애인활동지원사 교육";
+        const nextHours = res.trainingHours || sub.trainingHours || "8시간";
+        const nextNotes = res.summary || "AI 판독 완료";
+
+        setCourseName(nextCourse);
+        setTrainingHours(nextHours);
+        setManagerNotes(nextNotes);
+
+        const docRef = doc(db, "submissions", sub.id);
+        const updates = {
+          courseName: nextCourse,
+          trainingHours: nextHours,
+          institution: res.institution || sub.institution || "",
+          completionDate: res.completionDate || sub.completionDate || "",
+          certNumber: res.certNumber || sub.certNumber || "",
+          managerNotes: nextNotes,
+          isCompleted: true,
+          aiVerified: true,
+          reviewedAt: new Date().toISOString(),
+        };
+
+        await updateDoc(docRef, updates);
+        setSubmissions((prev) =>
+          prev.map((item) => (item.id === sub.id ? { ...item, ...updates } : item))
+        );
+
+        setAiFeedback({
+          type: "success",
+          message: `✨ AI 자동 판독 성공: ${nextCourse} (${nextHours})${res.institution ? ` [${res.institution}]` : ""}`,
+        });
+      } else {
+        setAiFeedback({
+          type: "error",
+          message: res.error || "수료증 AI 판독에 실패했습니다.",
+        });
+      }
+    } catch (err: any) {
+      setAiFeedback({
+        type: "error",
+        message: "AI 판독 중 오류가 발생했습니다: " + err.message,
+      });
+    } finally {
+      setSingleAiLoading(false);
+    }
+  };
+
   const getGeminiApiKey = () => {
-    return localStorage.getItem("USER_GEMINI_API_KEY") || (import.meta as any).env.VITE_GEMINI_API_KEY || "";
+    return geminiApiKey || localStorage.getItem("USER_GEMINI_API_KEY") || "";
   };
 
   const handleSaveApiKeySetting = async (key: string) => {
     const trimmedKey = key.trim();
+    if (!trimmedKey) return;
     try {
-      let savedOnServer = false;
-      // 1. Try to save on Express Server first
-      try {
-        const res = await fetch("/api/settings/apikey", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ apiKey: trimmedKey }),
-        });
-        if (res.ok) {
-          savedOnServer = true;
-        }
-      } catch (err) {
-        console.warn("Express API unavailable, proceeding to save directly to Firestore...");
-      }
-
-      // 2. Fallback: Save directly to Firestore settings/config client-side!
-      try {
-        const docRef = doc(db, "settings", "config");
-        await setDoc(docRef, {
-          geminiApiKey: trimmedKey,
-          updatedAt: new Date().toISOString(),
-        });
-      } catch (dbErr: any) {
-        console.error("Firestore write failed:", dbErr);
-        if (!savedOnServer) {
-          throw new Error("서버 및 데이터베이스 모두에 저장하지 못했습니다: " + dbErr.message);
-        }
-      }
-
-      // Save locally as cache
-      localStorage.setItem("USER_GEMINI_API_KEY", trimmedKey);
-      setTempApiKey(trimmedKey);
-      alert("Gemini API Key가 애플리케이션 및 브라우저 데이터베이스에 안전하게 영구 저장되었습니다.\n이제 링크를 받는 모든 사용자가 별도의 로그인/설정없이 수료증 자동 판독 기능을 즉시 이용할 수 있습니다.");
-      setShowApiKeySetting(false);
+      await saveStoredGeminiApiKey(trimmedKey);
+      setGeminiApiKey(trimmedKey);
+      setShowApiKeyModal(false);
     } catch (err: any) {
-      alert("API Key 저장 실패: " + (err.message || err));
+      console.error("API Key save error:", err);
     }
   };
 
@@ -424,7 +676,7 @@ export default function App() {
         }
 
         const ai = new GoogleGenAI({ apiKey: key });
-        const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+        const modelsToTry = ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
         let response: any = null;
         let lastError: any = null;
 
@@ -622,13 +874,26 @@ Return the parsed values in Korean language inside the requested JSON schema.`
         </div>
 
         <div className="flex items-center gap-2.5">
+          {/* Desktop & Mobile App Install Button */}
+          <button
+            id="btn-install-desktop-app"
+            onClick={handleInstallAppClick}
+            className="text-xs font-bold text-indigo-700 hover:text-indigo-900 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100/90 border border-indigo-200/90 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            title="바탕화면 또는 홈 화면에 바로가기 앱 설치"
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="leading-none">{isAppInstalled ? "앱 설치 안내" : "바탕화면 앱 설치"}</span>
+          </button>
+
           {isAdminLoggedIn && (
             <div className="hidden sm:flex items-center gap-2 mr-2 border-r border-slate-200 pr-4">
               <div className="w-7 h-7 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 font-bold text-[10px] uppercase">
                 AD
               </div>
               <div className="text-left leading-none font-sans">
-                <span className="text-[10px] font-bold text-slate-800 block leading-tight">지정 관리자</span>
+                <span className="text-[10px] font-bold text-slate-800 block leading-tight">
+                  {currentAdminName || "지정 관리자"}
+                </span>
                 <span className="text-[8px] text-slate-400 block leading-tight font-mono">수료증 확인 권한</span>
               </div>
             </div>
@@ -637,12 +902,21 @@ Return the parsed values in Korean language inside the requested JSON schema.`
           {userMode === "admin" && isAdminLoggedIn && (
             <>
               <button
-                onClick={() => setShowApiKeySetting(true)}
-                className="text-xs font-semibold text-slate-600 hover:text-slate-800 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 transition-all cursor-pointer flex items-center gap-1"
-                title="Gemini AI Key 설정"
+                onClick={() => {
+                  setIsApiKeyMandatory(false);
+                  setShowApiKeyModal(true);
+                }}
+                className={`text-xs font-semibold px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                  geminiApiKey
+                    ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    : "bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 animate-pulse"
+                }`}
+                title="Google Gemini AI Key 설정"
               >
-                <Settings className="w-3.5 h-3.5" />
-                <span className="hidden leading-none md:inline">API Key 설정</span>
+                <Key className="w-3.5 h-3.5 text-indigo-600" />
+                <span className="hidden leading-none md:inline">
+                  {geminiApiKey ? "API 키: 연동됨" : "API 키 설정 필요"}
+                </span>
               </button>
               
               <button
@@ -706,50 +980,116 @@ Return the parsed values in Korean language inside the requested JSON schema.`
               className="py-16 max-w-md mx-auto px-4"
               id="admin-login-section"
             >
-              <div className="bg-white border border-slate-200 p-8 shadow-xl rounded-3xl text-center space-y-6">
-                <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center mx-auto text-indigo-600 shadow-xs">
+              <div className="bg-white border border-slate-200 p-7 sm:p-8 shadow-xl rounded-3xl text-center space-y-5">
+                <div className="w-16 h-16 bg-indigo-50 border border-indigo-100/80 rounded-2xl flex items-center justify-center mx-auto text-indigo-600 shadow-xs">
                   <Lock className="w-8 h-8" />
                 </div>
                 
-                <div className="space-y-2">
-                  <h3 className="text-base font-bold text-slate-950">관리자 계정 인증</h3>
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-bold text-slate-900">
+                    {isRegistering ? "관리자 계정 신규 등록" : "관리자 계정 인증"}
+                  </h3>
                   <p className="text-slate-500 text-xs leading-relaxed font-medium">
-                    장애인활동지원 수료대장 확인 및 교육시간 승인을<br />
-                    진행하시려면 지정된 관리자 비밀번호를 입력해 주시기 바랍니다.
+                    {isRegistering 
+                      ? "새로운 관리자 계정을 생성합니다. 이름(ID)과 비밀번호를 설정하세요."
+                      : "장애인활동지원 수료대장 확인 및 교육시간 승인을 위해 로그인해 주세요."
+                    }
                   </p>
                 </div>
 
-                <div className="space-y-3">
-                  <input
-                    type="password"
-                    maxLength={10}
-                    value={adminPasscode}
-                    onChange={(e) => setAdminPasscode(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleAdminLogin();
-                      }
-                    }}
-                    placeholder="비밀번호 입력"
-                    className="w-full text-center tracking-[0.5em] px-4 py-3 border border-slate-200 bg-slate-50 rounded-xl text-lg font-bold focus:outline-none focus:border-indigo-500 focus:bg-white transition-all placeholder:tracking-normal placeholder:font-normal placeholder:text-sm"
-                  />
+                {/* Inline Error and Success Badges */}
+                {authError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl text-left flex items-start gap-2 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                    <span className="leading-relaxed">{authError}</span>
+                  </div>
+                )}
+
+                {authSuccess && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-xl text-left flex items-start gap-2 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                    <span className="leading-relaxed">{authSuccess}</span>
+                  </div>
+                )}
+
+                <div className="space-y-3.5 text-left">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      {isRegistering ? "등록할 관리자 이름 (ID)" : "관리자 이름 (ID)"}
+                    </label>
+                    <input
+                      type="text"
+                      value={adminName}
+                      onChange={(e) => {
+                        setAdminName(e.target.value);
+                        setAuthError(null);
+                      }}
+                      onKeyDown={(e) => e.key === "Enter" && handleAdminAuth()}
+                      placeholder="예: admin 또는 본인 이름"
+                      className="w-full px-4 py-2.5 border border-slate-200 bg-slate-50/70 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      비밀번호
+                    </label>
+                    <input
+                      type="password"
+                      value={adminPasscode}
+                      onChange={(e) => {
+                        setAdminPasscode(e.target.value);
+                        setAuthError(null);
+                      }}
+                      onKeyDown={(e) => e.key === "Enter" && handleAdminAuth()}
+                      placeholder="비밀번호 입력"
+                      className="w-full px-4 py-2.5 border border-slate-200 bg-slate-50/70 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
+                    />
+                  </div>
                   
                   <button
-                    onClick={handleAdminLogin}
-                    disabled={loading}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                    type="button"
+                    onClick={handleAdminAuth}
+                    disabled={isAuthenticating}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer mt-2"
                   >
-                    <UserCheck className="w-4 h-4" />
-                    {loading ? "인증 확인 중..." : "인증 및 대시보드 입장"}
+                    {isAuthenticating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>인증 확인 중...</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserCheck className="w-4 h-4" />
+                        <span>{isRegistering ? "계정 신규 등록 및 대시보드 입장" : "인증 및 대시보드 입장"}</span>
+                      </>
+                    )}
                   </button>
+                  
+                  <div className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsRegistering(!isRegistering);
+                        setAuthError(null);
+                        setAuthSuccess(null);
+                      }}
+                      className="text-xs font-semibold text-slate-500 hover:text-indigo-600 transition-colors inline-block underline cursor-pointer"
+                    >
+                      {isRegistering ? "이미 계정이 있으신가요? 기존 계정으로 로그인" : "계정이 없으신가요? 신규 관리자 등록"}
+                    </button>
+                  </div>
                 </div>
 
-                <button
-                  onClick={() => setUserMode("assistant")}
-                  className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors block mx-auto underline cursor-pointer"
-                >
-                  활동지원사 수료증 제출 양식으로 이동
-                </button>
+                <div className="pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setUserMode("assistant")}
+                    className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors inline-block underline cursor-pointer"
+                  >
+                    ← 활동지원사 수료증 제출 화면으로 이동
+                  </button>
+                </div>
               </div>
             </motion.div>
           ) : (
@@ -776,7 +1116,31 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                   </p>
                 </div>
 
-                <div className="flex gap-2.5 w-full sm:w-auto" id="header-action-panel">
+                <div className="flex flex-wrap gap-2.5 w-full sm:w-auto" id="header-action-panel">
+                  {/* ✨ 수료증 AI 일괄 확인 버튼 */}
+                  <button
+                    id="btn-batch-ai-verification"
+                    type="button"
+                    onClick={() => {
+                      if (!geminiApiKey) {
+                        setShowApiKeyModal(true);
+                        setIsApiKeyMandatory(true);
+                        return;
+                      }
+                      setShowBatchAiModal(true);
+                    }}
+                    className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shadow-indigo-100 cursor-pointer group"
+                    title="제출된 수료증 사진/PDF를 AI가 일괄 분석하여 대장에 자동 입력 및 목록화"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-300 group-hover:scale-110 transition-transform" />
+                    <span>수료증 AI 일괄 확인</span>
+                    {stats.pendingCount > 0 && (
+                      <span className="bg-amber-400 text-amber-950 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full leading-none">
+                        미확인 {stats.pendingCount}건
+                      </span>
+                    )}
+                  </button>
+
                   <button
                     id="btn-trigger-refresh"
                     onClick={handleRefreshList}
@@ -942,6 +1306,20 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                   <Layers className="w-3.5 h-3.5" />
                   <span>이수증 사진 모아보기 (일괄인쇄)</span>
                 </button>
+                {(currentAdminName?.toLowerCase().includes("admin") || currentAdminName === "admin (마스터)") && (
+                  <button
+                    type="button"
+                    onClick={() => setAdminViewMode("users")}
+                    className={`pb-3.5 text-xs sm:text-xs font-bold transition-all relative flex items-center gap-1.5 cursor-pointer md:px-1 ${
+                      adminViewMode === "users"
+                        ? "text-indigo-600 font-bold border-b-2 border-indigo-600"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>가입 계정/회원 관리 (벤 제어)</span>
+                  </button>
+                )}
               </div>
 
               {adminViewMode === "inspector" ? (
@@ -1119,35 +1497,105 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                         </div>
 
                         {/* Review Inputs */}
-                        <div className="space-y-4" id="inspector-interactive-inputs">
-                          <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="block text-[10px] text-indigo-650 font-extrabold uppercase tracking-wide">활동지원사 전송 데이터 (수료증 분석 대치 검토)</span>
+                        <div className="space-y-3.5" id="inspector-interactive-inputs">
+                          <div className="flex items-center justify-between">
+                            <span className="block text-[10px] text-indigo-700 font-extrabold uppercase tracking-wide">
+                              수료증 대장 입력 및 검토
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleSingleAiAnalysis(selectedSubmission)}
+                              disabled={singleAiLoading}
+                              className="px-2.5 py-1 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold text-[10px] rounded-lg shadow-xs flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                              title="Gemini AI로 이 수료증의 과정명과 시간을 자동 판독합니다"
+                            >
+                              <Sparkles className="w-3 h-3 text-amber-300" />
+                              <span>{singleAiLoading ? "AI 판독 중..." : "AI 즉시 판독"}</span>
+                            </button>
+                          </div>
+
+                          {/* AI Feedback Banner */}
+                          {aiFeedback && (
+                            <div
+                              className={`p-2.5 rounded-xl text-xs font-semibold flex items-start gap-2 ${
+                                aiFeedback.type === "success"
+                                  ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
+                                  : "bg-rose-50 border border-rose-200 text-rose-700"
+                              }`}
+                            >
+                              {aiFeedback.type === "success" ? (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                              ) : (
+                                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                              )}
+                              <span className="leading-relaxed">{aiFeedback.message}</span>
                             </div>
-                            <div className="p-4 bg-indigo-50/30 border border-slate-200/80 rounded-xl space-y-3 text-xs font-medium shadow-xs">
-                              <div className="grid grid-cols-2 gap-2.5">
-                                <div className="bg-white p-2.5 rounded-lg border border-slate-200/60 shadow-xs">
-                                  <span className="text-slate-400 text-[9px] font-bold block">성명</span>
-                                  <p className="text-slate-800 text-xs font-extrabold mt-0.5">{selectedSubmission.assistantName}</p>
-                                </div>
-                                <div className="bg-white p-2.5 rounded-lg border border-slate-200/60 shadow-xs">
-                                  <span className="text-slate-400 text-[9px] font-bold block">생년월일(6자리)</span>
-                                  <p className="text-slate-805 text-xs font-mono font-extrabold text-slate-800 mt-0.5">{selectedSubmission.birthDate}</p>
-                                </div>
+                          )}
+
+                          <div className="p-3.5 bg-slate-50/80 border border-slate-200/80 rounded-xl space-y-3 text-xs font-medium shadow-2xs">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="bg-white p-2 rounded-lg border border-slate-200/60 shadow-2xs">
+                                <span className="text-slate-400 text-[9px] font-bold block">성명</span>
+                                <p className="text-slate-800 text-xs font-extrabold mt-0.5">{selectedSubmission.assistantName}</p>
                               </div>
-                              <div className="bg-white p-2.5 rounded-lg border border-slate-200/60 shadow-xs">
-                                <span className="text-slate-400 text-[9px] font-bold block">제출 교육과정명</span>
-                                <p className="text-slate-800 text-[11px] font-semibold mt-0.5 leading-normal break-all">
-                                  {selectedSubmission.courseName || <span className="text-slate-300 italic font-normal">미작성 제출</span>}
-                                </p>
-                              </div>
-                              <div className="bg-white p-2.5 rounded-lg border border-slate-200/60 shadow-xs">
-                                <span className="text-slate-400 text-[9px] font-bold block">제출 수강 인정 시간</span>
-                                <p className="text-indigo-600 text-[11px] font-mono font-bold mt-0.5">
-                                  {selectedSubmission.trainingHours ? (selectedSubmission.trainingHours.includes("시간") ? selectedSubmission.trainingHours : `${selectedSubmission.trainingHours}시간`) : <span className="text-slate-300 italic font-normal">미작성 제출</span>}
-                                </p>
+                              <div className="bg-white p-2 rounded-lg border border-slate-200/60 shadow-2xs">
+                                <span className="text-slate-400 text-[9px] font-bold block">생년월일(6자리)</span>
+                                <p className="text-slate-800 text-xs font-mono font-extrabold mt-0.5">{selectedSubmission.birthDate}</p>
                               </div>
                             </div>
+
+                            <div>
+                              <label className="text-slate-500 text-[10px] font-bold block mb-1">
+                                이수 교육과정명
+                              </label>
+                              <input
+                                type="text"
+                                value={courseName}
+                                onChange={(e) => setCourseName(e.target.value)}
+                                placeholder="예: 2024년 활동지원사 보수교육"
+                                className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-slate-500 text-[10px] font-bold block mb-1">
+                                  인정 교육시간
+                                </label>
+                                <input
+                                  type="text"
+                                  value={trainingHours}
+                                  onChange={(e) => setTrainingHours(e.target.value)}
+                                  placeholder="예: 8시간"
+                                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-indigo-600 focus:outline-none focus:border-indigo-500 font-mono"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-slate-500 text-[10px] font-bold block mb-1">
+                                  발급기관
+                                </label>
+                                <input
+                                  type="text"
+                                  value={selectedSubmission.institution || ""}
+                                  readOnly
+                                  placeholder="AI 분석 시 자동 기재"
+                                  className="w-full px-3 py-1.5 bg-slate-100/60 border border-slate-200 rounded-lg text-xs text-slate-600"
+                                />
+                              </div>
+                            </div>
+
+                            {selectedSubmission.aiVerified && (
+                              <div className="pt-1 flex items-center justify-between text-[10px] text-indigo-600">
+                                <span className="flex items-center gap-1 font-bold">
+                                  <Sparkles className="w-3 h-3" /> AI 자동 판독 등록 완료
+                                </span>
+                                {selectedSubmission.completionDate && (
+                                  <span className="text-slate-400 font-mono">
+                                    이수일: {selectedSubmission.completionDate}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -1374,7 +1822,7 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                     </table>
                   </div>
                 </div>
-              ) : (
+              ) : adminViewMode === "gallery" ? (
                 /* Gallery Grid layout (이수증 사진 모아보기) */
                 <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 space-y-5" id="gallery-grid-view">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
@@ -1544,11 +1992,282 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                     )}
                   </div>
                 </div>
-              )}
+              ) : adminViewMode === "users" ? (
+                <UserManagementView
+                  currentAdminName={currentAdminName}
+                  submissions={submissions}
+                  onRefreshData={() => fetchSubmissions(true)}
+                />
+              ) : null}
             </motion.div>
           )}
         </AnimatePresence>
       </main>
+
+      {/* ──────────────────────────────────────────────
+          PWA DESKTOP / MOBILE INSTALLATION MODAL
+          ────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showInstallModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 p-5 text-white flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center text-white border border-white/20">
+                    <Download className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold leading-tight">바탕화면 / 홈 화면 앱 설치 안내</h3>
+                    <p className="text-xs text-indigo-100 mt-0.5">구글 로그인 없이 바탕화면 아이콘으로 바로 접속</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowInstallModal(false)}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6 space-y-5 overflow-y-auto flex-1 text-slate-700">
+                {/* Standalone Installation Action if browser prompt ready */}
+                {deferredInstallPrompt && (
+                  <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-2.5 w-2.5 rounded-full bg-indigo-600 animate-ping" />
+                      <p className="text-xs font-bold text-indigo-900">브라우저 설치 준비 완료</p>
+                    </div>
+                    <p className="text-xs text-indigo-700">
+                      아래 버튼을 누르면 브라우저의 공식 설치 대화상자가 즉시 실행되어 바탕화면에 바로가기 아이콘이 생성됩니다.
+                    </p>
+                    <button
+                      onClick={handleInstallAppClick}
+                      className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>지금 바로 원클릭 앱 설치하기</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Shared URL Direct Link Copier */}
+                <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-600">공유 전용 다이렉트 주소</span>
+                    <button
+                      onClick={handleCopyLink}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer bg-white px-2.5 py-1 rounded-md border border-slate-200 shadow-2xs"
+                    >
+                      {copiedLink ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-600">복사 완료!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span>링크 복사</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-mono break-all bg-white p-2 rounded-lg border border-slate-150 select-all">
+                    {window.location.origin.includes("ais-dev-")
+                      ? window.location.origin.replace("ais-dev-", "ais-pre-")
+                      : window.location.href}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    💡 이 링크는 Google AI Studio 로그인이 필요없는 독립형 웹앱 주소입니다. 활동지원사분들께 카카오톡이나 문자로 전송하시면 바로 접속됩니다.
+                  </p>
+                </div>
+
+                {/* OS/Device Tabs */}
+                <div>
+                  <span className="text-xs font-bold text-slate-800 block mb-2">기기별 바탕화면 설치 방법</span>
+                  <div className="flex border border-slate-200 rounded-xl p-1 bg-slate-100 gap-1 text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setInstallGuideTab("pc")}
+                      className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        installGuideTab === "pc" ? "bg-white text-indigo-700 shadow-2xs font-bold" : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      <Laptop className="w-3.5 h-3.5" />
+                      <span>PC 컴퓨터 (크롬/엣지)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInstallGuideTab("android")}
+                      className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        installGuideTab === "android" ? "bg-white text-indigo-700 shadow-2xs font-bold" : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      <Smartphone className="w-3.5 h-3.5" />
+                      <span>갤럭시/안드로이드</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInstallGuideTab("ios")}
+                      className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        installGuideTab === "ios" ? "bg-white text-indigo-700 shadow-2xs font-bold" : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      <Smartphone className="w-3.5 h-3.5" />
+                      <span>아이폰/아이패드</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tab Guide Details */}
+                {installGuideTab === "pc" && (
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3 text-xs">
+                    <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <Monitor className="w-4 h-4 text-indigo-600" />
+                      컴퓨터 바탕화면에 아이콘 생성하는 방법
+                    </p>
+                    <ol className="list-decimal list-inside space-y-2 text-slate-600 leading-relaxed font-medium">
+                      <li>
+                        상단 인터넷 주소창 우측 끝에 있는 <strong>[컴퓨터/설치 💻]</strong> 아이콘을 클릭합니다.
+                      </li>
+                      <li>
+                        또는 브라우저 오른쪽 위 <strong>점 3개(⋮) 메뉴</strong> ➔ <strong>[저장 및 공유]</strong> ➔ <strong>[바로가기 만들기]</strong>(또는 <strong>[앱 설치]</strong>)를 클릭합니다.
+                      </li>
+                      <li>
+                        <strong>[창으로 열기]</strong>에 체크 후 <strong>[만들기/설치]</strong>를 누르면 컴퓨터 바탕화면에 독립 실행형 전용 앱 아이콘이 생성됩니다.
+                      </li>
+                      <li className="text-indigo-700 font-semibold">
+                        이제부터는 바탕화면의 아이콘만 더블클릭하면 구글 로그인 없이 시스템이 바로 열립니다!
+                      </li>
+                    </ol>
+                  </div>
+                )}
+
+                {installGuideTab === "android" && (
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3 text-xs">
+                    <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <Smartphone className="w-4 h-4 text-indigo-600" />
+                      스마트폰(갤럭시/크롬/삼성인터넷) 홈 화면 설치
+                    </p>
+                    <ol className="list-decimal list-inside space-y-2 text-slate-600 leading-relaxed font-medium">
+                      <li>스마트폰 브라우저 우측 상단(또는 우측 하단)의 <strong>점 3개(⋮) 메뉴</strong> 또는 <strong>선 3개(≡)</strong>를 누릅니다.</li>
+                      <li>메뉴 목록에서 <strong>[홈 화면에 추가]</strong> 또는 <strong>[앱 설치]</strong>를 터치합니다.</li>
+                      <li>이름을 확인 후 <strong>[추가]</strong>를 누르면 스마트폰 앱 목록 및 홈 화면에 바로가기 앱이 설치됩니다.</li>
+                    </ol>
+                  </div>
+                )}
+
+                {installGuideTab === "ios" && (
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3 text-xs">
+                    <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <Smartphone className="w-4 h-4 text-indigo-600" />
+                      아이폰/아이패드 (Safari 사파리) 홈 화면 설치
+                    </p>
+                    <ol className="list-decimal list-inside space-y-2 text-slate-600 leading-relaxed font-medium">
+                      <li>사파리 브라우저 화면 하단 중앙의 <strong>[공유 버튼 ⎋ (네모 위 화살표)]</strong>를 터치합니다.</li>
+                      <li>공유 메뉴를 아래로 스크롤하여 <strong>[홈 화면에 추가]</strong>를 누릅니다.</li>
+                      <li>우측 상단 <strong>[추가]</strong>를 누르면 아이폰 바탕화면에 전용 수료증 제출 앱이 등록됩니다.</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowInstallModal(false)}
+                  className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  확인 완료
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ──────────────────────────────────────────────
+          ZOOMED IMAGE MODAL
+          ────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {zoomedImage && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xs font-sans">
+            <div className="relative max-w-4xl w-full max-h-[90vh] bg-white rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+              <div className="p-3 bg-slate-800 text-white flex items-center justify-between">
+                <span className="text-xs font-bold px-2">수료증 원본 확대 보기</span>
+                <button
+                  onClick={() => setZoomedImage(null)}
+                  className="w-7 h-7 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 flex items-center justify-center overflow-auto bg-slate-100 flex-1">
+                {isPdfFile(zoomedImage) ? (
+                  <iframe
+                    src={zoomedImage}
+                    className="w-full h-[70vh] rounded-lg border border-slate-200 bg-white"
+                    title="PDF 크게보기"
+                  />
+                ) : (
+                  <img
+                    src={zoomedImage}
+                    alt="확대 수료증"
+                    className="max-h-[75vh] max-w-full object-contain rounded-lg shadow-sm"
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ──────────────────────────────────────────────
+          GEMINI API KEY SETTING MODAL
+          ────────────────────────────────────────────── */}
+      <ApiKeyModal
+        isOpen={showApiKeyModal}
+        onClose={() => {
+          setShowApiKeyModal(false);
+          setIsApiKeyMandatory(false);
+        }}
+        currentKey={geminiApiKey}
+        onKeySaved={(newKey) => {
+          setGeminiApiKey(newKey);
+          setIsApiKeyMandatory(false);
+        }}
+        isMandatory={isApiKeyMandatory && !geminiApiKey}
+        onExitToAssistant={() => {
+          setShowApiKeyModal(false);
+          setIsApiKeyMandatory(false);
+          setUserMode("assistant");
+        }}
+      />
+
+      {/* ──────────────────────────────────────────────
+          BATCH AI CERTIFICATE VERIFICATION MODAL
+          ────────────────────────────────────────────── */}
+      <BatchAiVerificationModal
+        isOpen={showBatchAiModal}
+        onClose={() => setShowBatchAiModal(false)}
+        submissions={submissions}
+        apiKey={geminiApiKey}
+        onUpdateSubmissions={(updated) => {
+          setSubmissions(updated);
+        }}
+        onOpenApiKeyModal={() => {
+          setShowApiKeyModal(true);
+          setIsApiKeyMandatory(true);
+        }}
+      />
 
       {/* App Footer banner design credits */}
       <footer className="bg-slate-50 border-t border-slate-200/60 py-8 text-center text-xs text-slate-400 font-medium space-y-3 mt-12" id="app-footer">
@@ -1562,6 +2281,10 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                 onClick={() => {
                   setUserMode("admin");
                   fetchSubmissions();
+                  if (isAdminLoggedIn && !geminiApiKey) {
+                    setShowApiKeyModal(true);
+                    setIsApiKeyMandatory(true);
+                  }
                 }}
                 className="text-slate-400 hover:text-indigo-600 transition-colors underline font-medium cursor-pointer"
               >

@@ -322,7 +322,7 @@ Return the parsed values in Korean language inside the requested JSON schema.
 If the birth date is found, represent it as 'YYMMDD' (6 digits, e.g., 740125). If we cannot map it cleanly, output YYMMDD base representation.
 If no training hours is found, leave it as an empty string.`;
 
-    const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+    const modelsToTry = ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
     let response: any = null;
     let lastError: any = null;
 
