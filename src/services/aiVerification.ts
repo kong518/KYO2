@@ -131,6 +131,12 @@ assistantName, birthDate(YYMMDD), courseName, trainingHours(숫자+시간), inst
         if (err.status === 429 || err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
           throw new Error("Gemini API 사용량 한도(Quota)를 초과했습니다. 잠시 후 다시 시도해 주세요.");
         }
+
+        // If 503 or overloaded, wait briefly before trying the next model
+        if (err.status === 503 || err.message?.includes("503") || err.message?.includes("high demand") || err.message?.includes("UNAVAILABLE")) {
+          console.warn(`[AI Verification] Model ${modelName} overloaded. Waiting 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
     }
 
@@ -161,9 +167,16 @@ assistantName, birthDate(YYMMDD), courseName, trainingHours(숫자+시간), inst
     }
   } catch (err: any) {
     console.error("Gemini API certificate verification error:", err);
+    let errorMsg = err.message || "수료증 분석 중 오류가 발생했습니다.";
+    
+    // Check for common quota/rate limit errors
+    if (errorMsg.includes("429") || errorMsg.includes("RESOURCE_EXHAUSTED") || errorMsg.includes("quota")) {
+      errorMsg = "API 사용량 한도(Quota)를 초과했습니다. Gemini API의 무료 티어 제한에 도달했거나 너무 많은 요청이 발생했습니다. 잠시 후(수 분 뒤) 다시 시도해 주세요.";
+    }
+
     return {
       success: false,
-      error: err.message || "수료증 분석 중 오류가 발생했습니다.",
+      error: errorMsg,
     };
   }
 }
