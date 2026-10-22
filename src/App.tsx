@@ -48,7 +48,7 @@ import BatchAiVerificationModal from "./components/BatchAiVerificationModal";
 import UserManagementView from "./components/UserManagementView";
 import { analyzeCertificateWithGemini } from "./services/aiVerification";
 import { EducationCertificate, EducationStats } from "./types";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 
 const isPdfFile = (imgUrl: string | undefined | null) => {
   if (!imgUrl) return false;
@@ -479,48 +479,80 @@ export default function App() {
       return isNaN(num) ? 0 : num;
     };
 
-    const lastRow = submissions.length + 3;
-
     const wsData = [
       ["장애인활동지원 온라인 교육 목록", "", "", "", ""],
-      ["총 이수 누적시간 (필터 반영):", "", "", { t: 'n', f: `SUBTOTAL(9,D4:D${lastRow})`, z: '#,##0"시간"' }, ""],
+      ["", "", "", "", ""],
       ["지원사 성명", "생년월일", "구분", "승인 교육시간", "이수 교육과정명"],
     ];
 
     submissions.forEach((s) => {
-      const hoursNum = formatHoursNumber(s.trainingHours);
       wsData.push([
         s.assistantName || "",
         s.birthDate || "",
         "이수",
-        { t: 'n', v: hoursNum, z: '#,##0"시간"' },
+        formatHoursNumber(s.trainingHours),
         s.courseName || "미입력"
       ]);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
+    // Apply styles and SUBTOTAL formula
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:E1');
+    const lastRow = range.e.r + 1;
+    
+    // SUBTOTAL in row 2, col D (index 3)
+    ws['D2'] = { t: 'n', f: `SUBTOTAL(9,D4:D${lastRow})`, z: '#,##0"시간"' };
+    ws['A2'] = { t: 's', v: '총 이수 누적시간 (필터 반영):' };
+    
+    // Styling
     ws['!cols'] = [
-      { wch: 20 },
-      { wch: 9 },
-      { wch: 10 },
-      { wch: 19 },
-      { wch: 50 },
+      { wch: 20 }, { wch: 9 }, { wch: 10 }, { wch: 19 }, { wch: 50 },
     ];
+    
+    // Format cells for center alignment
+    for (let r = 0; r <= range.e.r; r++) {
+      for (let c = 0; c <= range.e.c; c++) {
+        const cellAddress = XLSX.utils.encode_cell({ r, c });
+        if (!ws[cellAddress]) continue;
+        ws[cellAddress].s = {
+          alignment: { horizontal: 'center', vertical: 'center' },
+          font: { name: 'Malgun Gothic', sz: 11 },
+          border: {
+            top: { style: 'thin', color: { rgb: '9ca3af' } },
+            bottom: { style: 'thin', color: { rgb: '9ca3af' } },
+            left: { style: 'thin', color: { rgb: '9ca3af' } },
+            right: { style: 'thin', color: { rgb: '9ca3af' } }
+          }
+        };
+      }
+    }
 
-    ws['!rows'] = [
-      { hpt: 35 },
-      { hpt: 23 },
-      { hpt: 30 },
-    ];
-    for (let i = 0; i < submissions.length; i++) {
-      ws['!rows'].push({ hpt: 20 });
+    // Title Style
+    ws['A1'].s = {
+      alignment: { horizontal: 'center', vertical: 'center' },
+      font: { name: 'Malgun Gothic', sz: 18, bold: true },
+      border: { bottom: { style: 'thin', color: { rgb: '9ca3af' } } }
+    };
+    
+    // Header Style
+    for (let c = 0; c < 5; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: 2, c })];
+        if (cell) {
+            cell.s = {
+                ...cell.s,
+                font: { name: 'Malgun Gothic', sz: 11, bold: true },
+                fill: { fgColor: { rgb: 'e0e7ff' } }
+            };
+        }
     }
 
     ws['!merges'] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
     ];
+
+    ws['!autofilter'] = { ref: `A3:E${lastRow}` };
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "교육수료목록");
