@@ -1196,56 +1196,91 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                         alert("다운로드할 데이터가 없습니다.");
                         return;
                       }
-                      const escapeCsv = (val: string) => {
-                        const str = String(val ?? "").replace(/"/g, '""');
-                        return str.includes(",") || str.includes("\n") || str.includes('"') ? `"${str}"` : str;
+
+                      const formatHours = (raw: string) => {
+                        if (!raw) return "0시간";
+                        let cleaned = raw.trim();
+                        cleaned = cleaned.replace(/시간시간/g, "시간");
+                        cleaned = cleaned.replace(/(\d+분)\s*시간/g, "$1");
+                        if (!cleaned.includes("시간") && !cleaned.includes("분")) {
+                          const num = parseFloat(cleaned.replace(/[^0-9.]/g, ""));
+                          if (!isNaN(num)) {
+                            return `${num}시간`;
+                          }
+                        }
+                        return cleaned;
                       };
 
-                      const totalCompleted = submissions.filter(s => s.isCompleted).length;
                       const totalHoursSum = submissions
-                        .filter((s) => s.isCompleted && s.trainingHours)
+                        .filter((s) => s.trainingHours)
                         .reduce((sum, s) => {
                           const num = parseFloat(s.trainingHours.replace(/[^0-9.]/g, ""));
                           return isNaN(num) ? sum : sum + num;
                         }, 0);
 
-                      // Exactly matches column structure:
-                      // A: 지원사 성명 | B: 생년월일 | C: 이수상태 | D: 승인 교육시간(시간) | E: 이수 교육과정명 | F: 제출 일시 | G: [Empty] | H: 총 완료 건수 / 총 이수 누적시간
-                      const rows = [
-                        ["장애인활동지원 온라인 교육 수료대장 완료자 명단", "", "", "", "", "", "", ""],
-                        ["지원사 성명", "생년월일", "이수상태", "승인 교육시간(시간)", "이수 교육과정명", "제출 일시", "", "총 완료 건수: " + totalCompleted + "건"]
-                      ];
+                      const rowsHtml = submissions.map((s) => {
+                        const hoursFormatted = formatHours(s.trainingHours);
+                        return `
+                          <tr>
+                            <td>${s.assistantName || ""}</td>
+                            <td>${s.birthDate || ""}</td>
+                            <td>이수</td>
+                            <td>${hoursFormatted}</td>
+                            <td>${s.courseName || "미입력"}</td>
+                          </tr>
+                        `;
+                      }).join("");
 
-                      submissions.forEach((s, idx) => {
-                        const sideSummary = idx === 0 
-                          ? "총 이수 누적시간: " + totalHoursSum + "시간" 
-                          : "";
-                        const dur = s.trainingHours ? (s.trainingHours.endsWith("시간") ? s.trainingHours : `${s.trainingHours}시간`) : "0시간";
-                        
-                        rows.push([
-                          s.assistantName,
-                          s.birthDate,
-                          s.isCompleted ? "이수완료" : "검토대기",
-                          dur,
-                          s.courseName || "미입력",
-                          s.submittedAt,
-                          "",
-                          sideSummary
-                        ]);
-                      });
+                      const htmlContent = `
+                        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+                        <head>
+                        <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+                        <style>
+                          body { font-family: 'Malgun Gothic', sans-serif; text-align: center; }
+                          table { border-collapse: collapse; width: 100%; margin: 0 auto; x:autofilter: all; }
+                          th, td { border: 1px solid #9ca3af; text-align: center; vertical-align: middle; padding: 10px 12px; font-size: 11pt; mso-number-format:"\@"; }
+                          th { background-color: #e0e7ff; font-weight: bold; color: #1f2937; }
+                          .title { font-size: 18pt; font-weight: bold; text-align: center; padding: 20px 0; border: none; }
+                          .summary { font-size: 12pt; font-weight: bold; text-align: right; padding: 10px 15px; border: none; background-color: #f8fafc; }
+                        </style>
+                        </head>
+                        <body>
+                          <table>
+                            <tr>
+                              <td colspan="5" class="title">장애인활동지원 온라인 교육 목록</td>
+                            </tr>
+                            <tr>
+                              <td colspan="5" class="summary">총 이수 누적시간: ${totalHoursSum}시간 (총 ${submissions.length}건)</td>
+                            </tr>
+                            <colgroup>
+                              <col style="width: 160px;" /> <!-- A열 너비 20 -->
+                              <col style="width: 90px;" />  <!-- B열 너비 9 -->
+                              <col style="width: 100px;" /> <!-- C열 -->
+                              <col style="width: 150px;" /> <!-- D열 너비 19 -->
+                              <col style="width: 380px;" /> <!-- E열 너비 50 -->
+                            </colgroup>
+                            <thead>
+                              <tr style="height: 35px;" x:autofilter="all">
+                                <th>지원사 성명</th>
+                                <th>생년월일</th>
+                                <th>구분</th>
+                                <th>승인 교육시간</th>
+                                <th>이수 교육과정명</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${rowsHtml}
+                            </tbody>
+                          </table>
+                        </body>
+                        </html>
+                      `;
 
-                      // If list is empty
-                      if (submissions.length === 0) {
-                        rows.push(["", "", "", "", "", "", "", "총 이수 누적시간: " + totalHoursSum + "시간"]);
-                      }
-
-                      const csvContent = rows.map(r => r.map(escapeCsv).join(",")).join("\n");
-                      
-                      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+                      const blob = new Blob(["\uFEFF" + htmlContent], { type: "application/vnd.ms-excel;charset=utf-8;" });
                       const url = URL.createObjectURL(blob);
                       const link = document.createElement("a");
                       link.setAttribute("href", url);
-                      link.setAttribute("download", `온라인교육_이수자현황_${new Date().toISOString().slice(0,10)}.csv`);
+                      link.setAttribute("download", `장애인활동지원_온라인교육목록_${new Date().toISOString().slice(0,10)}.xls`);
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
