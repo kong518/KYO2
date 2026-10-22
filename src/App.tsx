@@ -1197,90 +1197,155 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                         return;
                       }
 
-                      const formatHours = (raw: string) => {
-                        if (!raw) return "0시간";
+                      const formatHoursNumber = (raw: string) => {
+                        if (!raw) return 0;
                         let cleaned = raw.trim();
                         cleaned = cleaned.replace(/시간시간/g, "시간");
                         cleaned = cleaned.replace(/(\d+분)\s*시간/g, "$1");
-                        if (!cleaned.includes("시간") && !cleaned.includes("분")) {
-                          const num = parseFloat(cleaned.replace(/[^0-9.]/g, ""));
-                          if (!isNaN(num)) {
-                            return `${num}시간`;
-                          }
-                        }
-                        return cleaned;
+                        const num = parseFloat(cleaned.replace(/[^0-9.]/g, ""));
+                        return isNaN(num) ? 0 : num;
                       };
+
+                      const lastRow = submissions.length + 3; // data starts at row 4
 
                       const totalHoursSum = submissions
                         .filter((s) => s.trainingHours)
-                        .reduce((sum, s) => {
-                          const num = parseFloat(s.trainingHours.replace(/[^0-9.]/g, ""));
-                          return isNaN(num) ? sum : sum + num;
-                        }, 0);
+                        .reduce((sum, s) => sum + formatHoursNumber(s.trainingHours), 0);
 
-                      const rowsHtml = submissions.map((s) => {
-                        const hoursFormatted = formatHours(s.trainingHours);
+                      const dataRowsXml = submissions.map((s, idx) => {
+                        const hoursNum = formatHoursNumber(s.trainingHours);
                         return `
-                          <tr>
-                            <td>${s.assistantName || ""}</td>
-                            <td>${s.birthDate || ""}</td>
-                            <td>이수</td>
-                            <td>${hoursFormatted}</td>
-                            <td>${s.courseName || "미입력"}</td>
-                          </tr>
-                        `;
+   <Row ss:Height="20">
+    <Cell ss:StyleID="centerText"><Data ss:Type="String">${s.assistantName || ""}</Data></Cell>
+    <Cell ss:StyleID="centerText"><Data ss:Type="String">${s.birthDate || ""}</Data></Cell>
+    <Cell ss:StyleID="centerText"><Data ss:Type="String">이수</Data></Cell>
+    <Cell ss:StyleID="centerNumber"><Data ss:Type="Number">${hoursNum}</Data></Cell>
+    <Cell ss:StyleID="centerText"><Data ss:Type="String">${s.courseName || "미입력"}</Data></Cell>
+   </Row>`;
                       }).join("");
 
-                      const htmlContent = `
-                        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-                        <head>
-                        <meta http-equiv="content-type" content="text/html; charset=UTF-8">
-                        <style>
-                          body { font-family: 'Malgun Gothic', sans-serif; text-align: center; }
-                          table { border-collapse: collapse; width: 100%; margin: 0 auto; x:autofilter: all; }
-                          th, td { border: 1px solid #9ca3af; text-align: center; vertical-align: middle; padding: 10px 12px; font-size: 11pt; mso-number-format:"\@"; }
-                          th { background-color: #e0e7ff; font-weight: bold; color: #1f2937; }
-                          .title { font-size: 18pt; font-weight: bold; text-align: center; padding: 20px 0; border: none; }
-                          .summary { font-size: 12pt; font-weight: bold; text-align: right; padding: 10px 15px; border: none; background-color: #f8fafc; }
-                        </style>
-                        </head>
-                        <body>
-                          <table>
-                            <tr>
-                              <td colspan="5" class="title">장애인활동지원 온라인 교육 목록</td>
-                            </tr>
-                            <tr>
-                              <td colspan="5" class="summary">총 이수 누적시간: ${totalHoursSum}시간 (총 ${submissions.length}건)</td>
-                            </tr>
-                            <colgroup>
-                              <col style="width: 160px;" /> <!-- A열 너비 20 -->
-                              <col style="width: 90px;" />  <!-- B열 너비 9 -->
-                              <col style="width: 100px;" /> <!-- C열 -->
-                              <col style="width: 150px;" /> <!-- D열 너비 19 -->
-                              <col style="width: 380px;" /> <!-- E열 너비 50 -->
-                            </colgroup>
-                            <thead>
-                              <tr style="height: 35px;" x:autofilter="all">
-                                <th>지원사 성명</th>
-                                <th>생년월일</th>
-                                <th>구분</th>
-                                <th>승인 교육시간</th>
-                                <th>이수 교육과정명</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              ${rowsHtml}
-                            </tbody>
-                          </table>
-                        </body>
-                        </html>
-                      `;
+                      const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
+   <Borders/>
+   <Font ss:FontName="Malgun Gothic" ss:Size="11"/>
+   <Interior/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="TitleStyle">
+   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
+   <Font ss:FontName="Malgun Gothic" ss:Size="16" ss:Bold="1"/>
+  </Style>
+  <Style ss:ID="SummaryStyle">
+   <Alignment ss:Vertical="Center" ss:Horizontal="Right"/>
+   <Font ss:FontName="Malgun Gothic" ss:Size="11" ss:Bold="1"/>
+   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="SummaryValueStyle">
+   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
+   <Font ss:FontName="Malgun Gothic" ss:Size="11" ss:Bold="1"/>
+   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+   <NumberFormat ss:Format="#,##0&quot;시간&quot;"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="HeaderStyle">
+   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
+   <Font ss:FontName="Malgun Gothic" ss:Size="11" ss:Bold="1"/>
+   <Interior ss:Color="#E0E7FF" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="centerText">
+   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="centerNumber">
+   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
+   <NumberFormat ss:Format="#,##0&quot;시간&quot;"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+   </Borders>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="교육수료목록">
+  <Table ss:ExpandedColumnCount="5" ss:ExpandedRowCount="${lastRow}" x:FullColumns="1" x:FullRows="1" ss:DefaultRowHeight="20">
+   <Column ss:Width="160"/> <!-- A열 너비 20 (~160px) -->
+   <Column ss:Width="72"/>  <!-- B열 너비 9 (~72px) -->
+   <Column ss:Width="85"/>  <!-- C열 구분 (~85px) -->
+   <Column ss:Width="150"/> <!-- D열 너비 19 (~150px) -->
+   <Column ss:Width="380"/> <!-- E열 너비 50 (~380px) -->
+   
+   <!-- Row 1: Title (Height 35) -->
+   <Row ss:Height="35">
+    <Cell ss:MergeAcross="4" ss:StyleID="TitleStyle"><Data ss:Type="String">장애인활동지원 온라인 교육 목록</Data></Cell>
+   </Row>
+   
+   <!-- Row 2: Summary with SUBTOTAL formula (Height 23) -->
+   <Row ss:Height="23">
+    <Cell ss:MergeAcross="3" ss:StyleID="SummaryStyle"><Data ss:Type="String">총 이수 누적시간 (필터 반영):</Data></Cell>
+    <Cell ss:StyleID="SummaryValueStyle" ss:Formula="=SUBTOTAL(9,R4C4:R${lastRow}C4)"><Data ss:Type="Number">${totalHoursSum}</Data></Cell>
+   </Row>
+   
+   <!-- Row 3: Header (Height 30) -->
+   <Row ss:Height="30">
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">지원사 성명</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">생년월일</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">구분</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">승인 교육시간</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">이수 교육과정명</Data></Cell>
+   </Row>
+   
+   ${dataRowsXml}
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup>
+    <Header x:Margin="0.3"/>
+    <Footer x:Margin="0.3"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
+   </PageSetup>
+   <Selected/>
+   <AutoFilter x:Range="R3C1:R${lastRow}C5" xmlns="urn:schemas-microsoft-com:office:excel"></AutoFilter>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
 
-                      const blob = new Blob(["\uFEFF" + htmlContent], { type: "application/vnd.ms-excel;charset=utf-8;" });
+                      const blob = new Blob(["\uFEFF" + xmlContent], { type: "application/vnd.ms-excel;charset=utf-8;" });
                       const url = URL.createObjectURL(blob);
                       const link = document.createElement("a");
                       link.setAttribute("href", url);
-                      link.setAttribute("download", `장애인활동지원_온라인교육목록_${new Date().toISOString().slice(0,10)}.xls`);
+                      link.setAttribute("download", `장애인활동지원_온라인교육목록_${new Date().toISOString().slice(0,10)}.xml`);
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
