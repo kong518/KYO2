@@ -63,6 +63,8 @@ export async function analyzeCertificateWithGemini(
     };
   }
 
+  const timeout = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error("AI 분석 응답 시간이 초과되었습니다.")), ms));
+
   try {
     const { mimeType, base64 } = parseDataUrl(certificateDataUrl);
 
@@ -72,69 +74,78 @@ export async function analyzeCertificateWithGemini(
 첨부된 수료증 사진/문서(이미지 또는 PDF)를 꼼꼼하게 판독하여 다음 수료대장 정보를 정밀 추출해 주세요.
 
 추출 항목:
-1. assistantName: 교육 이수자 성명 (수료증에 적힌 한글 성명)
-2. birthDate: 생년월일 (YYMMDD 또는 YYYY-MM-DD 형식)
-3. courseName: 교육과정명 (예: 활동지원사 보수교육, 이론교육, 실무직무교육 등 수료증에 기재된 정식 교육명)
-4. trainingHours: 교육 인정 시간 (예: "8시간", "4시간", "40시간" 등 정확한 수치와 '시간' 표기)
-5. institution: 수료증 발급기관/주관기관 (예: 한국장애인개발원, 경기장애인복지관, 수원재활센터 등 직인 또는 발급처)
-6. completionDate: 수료/이수일자 (예: 2024-05-18 또는 2024.05.18)
-7. certNumber: 수료증 발급 번호 (예: 제2024-호, 번호가 보이지 않으면 빈 문자열)
-8. summary: 판독 내용 요약 1문장 (예: 수원재활센터 보수교육 8시간 이수 확인)`;
+1. assistantName: 교육 이수자 성명
+2. birthDate: 생년월일 (YYMMDD 형식)
+3. courseName: 교육과정명
+4. trainingHours: 교육 인정 시간 (숫자와 '시간' 표기)
+5. institution: 수료증 발급기관
+6. completionDate: 수료/이수일자
+7. certNumber: 수료증 발급 번호
+8. summary: 판독 내용 요약 1문장`;
 
-    const modelsToTry = ["gemini-1.5-flash", "gemini-flash-latest", "gemini-2.0-flash"];
+    // Robust list of models
+    const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-flash-latest"];
     let response: any = null;
     let lastError: any = null;
 
     for (const modelName of modelsToTry) {
       try {
-        response = await ai.models.generateContent({
-          model: modelName,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  inlineData: {
-                    mimeType,
-                    data: base64,
+        response = await Promise.race([
+          ai.models.generateContent({
+            model: modelName,
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType,
+                      data: base64,
+                    },
                   },
-                },
-                {
-                  text: prompt,
-                },
-              ],
-            },
-          ],
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                assistantName: { type: Type.STRING },
-                birthDate: { type: Type.STRING },
-                courseName: { type: Type.STRING },
-                trainingHours: { type: Type.STRING },
-                institution: { type: Type.STRING },
-                completionDate: { type: Type.STRING },
-                certNumber: { type: Type.STRING },
-                summary: { type: Type.STRING },
+                  {
+                    text: prompt,
+                  },
+                ],
               },
-              required: ["courseName", "trainingHours"],
+            ],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  assistantName: { type: Type.STRING },
+                  birthDate: { type: Type.STRING },
+                  courseName: { type: Type.STRING },
+                  trainingHours: { type: Type.STRING },
+                  institution: { type: Type.STRING },
+                  completionDate: { type: Type.STRING },
+                  certNumber: { type: Type.STRING },
+                  summary: { type: Type.STRING },
+                },
+                required: ["courseName", "trainingHours"],
+              },
             },
-          },
-        });
+          }),
+          timeout(30000)
+        ]);
 
         if (response && response.text) {
           break;
         }
       } catch (err: any) {
         lastError = err;
-        console.warn(`[AI Verification] Model ${modelName} failed, trying fallback:`, err?.message || err);
+        console.warn(`[AI Verification] Model ${modelName} failed:`, err?.message || err);
+        
+        // If quota exceeded, don't bother trying other models
+        if (err.status === 429 || err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
+          throw new Error("Gemini API 사용량 한도(Quota)를 초과했습니다. 잠시 후 다시 시도해 주세요.");
+        }
       }
     }
 
     if (!response || !response.text) {
-      throw lastError || new Error("AI 모델로부터 판독 결과를 수신하지 못했습니다.");
+      throw lastError || new Error("AI 분석에 실패했습니다.");
     }
 
     const text = response.text;
@@ -145,7 +156,7 @@ export async function analyzeCertificateWithGemini(
         success: true,
         assistantName: parsed.assistantName?.trim() || "",
         birthDate: parsed.birthDate?.trim() || "",
-        courseName: parsed.courseName?.trim() || "장애인활동지원사 보수교육",
+        courseName: parsed.courseName?.trim() || "장애인활동지원사 교육",
         trainingHours: parsed.trainingHours?.trim() || "8시간",
         institution: parsed.institution?.trim() || "",
         completionDate: parsed.completionDate?.trim() || "",
@@ -153,7 +164,6 @@ export async function analyzeCertificateWithGemini(
         summary: parsed.summary?.trim() || "AI 자동 판독 완료",
       };
     } catch (parseErr) {
-      console.warn("JSON parse failed, text was:", text);
       return {
         success: false,
         error: "AI 응답 형식이 올바르지 않습니다.",
@@ -161,15 +171,9 @@ export async function analyzeCertificateWithGemini(
     }
   } catch (err: any) {
     console.error("Gemini API certificate verification error:", err);
-    let msg = err?.message || "수료증 분석 중 오류가 발생했습니다.";
-    if (msg.includes("API key not valid") || msg.includes("API_KEY_INVALID")) {
-      msg = "유효하지 않은 Gemini API 키입니다. API 키 설정을 다시 확인해 주세요.";
-    } else if (msg.includes("Resource has been exhausted") || msg.includes("429")) {
-      msg = "API 사용량 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.";
-    }
     return {
       success: false,
-      error: msg,
+      error: err.message || "수료증 분석 중 오류가 발생했습니다.",
     };
   }
 }

@@ -812,124 +812,30 @@ export default function App() {
       try {
         const response = await fetch('/api/submissions/ocr', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ imageBase64: imgBase64 }),
         });
 
         if (response.ok) {
-          const textRes = await response.text();
-          data = JSON.parse(textRes);
+          data = await response.json();
           usedServer = true;
         }
       } catch (err) {
-        console.warn("Express backend OCR unavailable or returned error, attempting client-side fallback...", err);
+        console.warn("Express backend OCR unavailable, attempting client-side fallback...", err);
       }
 
-      // 2. Client-side fallback if server failed (e.g., on Vercel)
+      // 2. Client-side fallback using robust analyzeCertificateWithGemini
       if (!usedServer) {
-        const key = await getStoredGeminiApiKey();
+        const key = getGeminiApiKey();
         if (!key) {
-          throw new Error("서버 또는 데이터베이스에 등록된 Gemini API Key가 없습니다. 우측 상단의 [⚙️ API Key 설정] 버튼을 클릭해 등록해주세요.");
+          throw new Error("Gemini API Key가 설정되지 않았습니다. 우측 상단의 [⚙️ API Key 설정] 메뉴에서 등록해주세요.");
         }
 
-        const { GoogleGenAI, Type } = await import('@google/genai');
-        
-        // Clean up base64
-        let rawBase64 = imgBase64;
-        let mimeType = 'image/png';
-        if (imgBase64.includes(";base64,")) {
-          const parts = imgBase64.split(";base64,");
-          rawBase64 = parts[1];
-          mimeType = parts[0].replace("data:", "").split(";")[0];
+        const ocrResult = await analyzeCertificateWithGemini(imgBase64, key);
+        if (!ocrResult.success) {
+          throw new Error(ocrResult.error || "분석에 실패했습니다.");
         }
-
-        const ai = new GoogleGenAI({ apiKey: key });
-        const modelsToTry = ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
-        let response: any = null;
-        let lastError: any = null;
-
-        for (const currentModel of modelsToTry) {
-          let attempt = 0;
-          const maxRetries = 3;
-          const initialDelay = 1000;
-
-          console.log(`[Admin Gemini OCR] Trying direct analysis using model: ${currentModel}`);
-          
-          while (attempt < maxRetries) {
-            try {
-              response = await ai.models.generateContent({
-                model: currentModel,
-                contents: [
-                  {
-                    inlineData: {
-                      data: rawBase64,
-                      mimeType,
-                    }
-                  },
-                  `Please analyze this uploaded training certificate. 
-Extract the following details from this image/PDF:
-1. Name (성명/이름)
-2. Date of Birth (생년월일 - 6자리 예시: 740125)
-3. Course Name (교육명칭/수강과정명)
-4. Training Hours (교육이수시간)
-
-Return the parsed values in Korean language inside the requested JSON schema.`
-                ],
-                config: {
-                  responseMimeType: "application/json",
-                  responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                      assistantName: { type: Type.STRING },
-                      birthDate: { type: Type.STRING },
-                      courseName: { type: Type.STRING },
-                      trainingHours: { type: Type.STRING }
-                    },
-                    required: ["assistantName", "birthDate", "courseName", "trainingHours"]
-                  }
-                }
-              });
-              break; // Succeeded! Break retry loop
-            } catch (error: any) {
-              attempt++;
-              lastError = error;
-              const errMsg = error.message || "";
-              console.warn(`[Admin Gemini OCR] Model ${currentModel} Attempt ${attempt}/${maxRetries} failed:`, errMsg);
-
-              const isRetryable = 
-                error.status === "UNAVAILABLE" || 
-                error.code === 503 ||
-                error.status === "RESOURCE_EXHAUSTED" || 
-                error.code === 429 ||
-                errMsg.includes("503") || 
-                errMsg.includes("UNAVAILABLE") || 
-                errMsg.includes("high demand") ||
-                errMsg.includes("429") ||
-                errMsg.includes("RESOURCE_EXHAUSTED") ||
-                errMsg.includes("rate limit") ||
-                errMsg.includes("overloaded");
-
-              if (isRetryable && attempt < maxRetries) {
-                const delay = initialDelay * Math.pow(2, attempt - 1) * (0.8 + Math.random() * 0.4);
-                console.log(`[Admin Gemini OCR] Retrying in ${Math.round(delay)}ms...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-              } else {
-                break; // Non-retryable error or exhausted retries for this model
-              }
-            }
-          }
-
-          if (response && response.text) {
-            break; // Successfully got response, stop trying other models
-          }
-        }
-
-        if (!response || !response.text) {
-          throw lastError || new Error("수행된 직접분석의 응답 본문이 비어있거나 분석에 실패했습니다 (시도된 모든 모델 실패).");
-        }
-        data = JSON.parse(response.text.trim());
+        data = ocrResult;
       }
 
       const extractedCourse = data.courseName || "";
@@ -938,17 +844,11 @@ Return the parsed values in Korean language inside the requested JSON schema.`
       const extractedBirth = data.birthDate || "";
 
       setCourseName(extractedCourse);
-      
-      let normalizedHours = extractedHours;
-      const matchedNum = extractedHours.replace(/[^0-9.]/g, "");
-      if (matchedNum && !isNaN(parseFloat(matchedNum))) {
-        normalizedHours = matchedNum;
-      }
-      setTrainingHours(normalizedHours);
+      setTrainingHours(extractedHours.replace(/[^0-9.]/g, ""));
 
+      // Validation
       const cleanNameSub = subName.replace(/\s+/g, "");
       const cleanNameExt = extractedName.replace(/\s+/g, "");
-      
       const cleanBirthSub = subBirth.replace(/[^0-9]/g, "");
       const cleanBirthExt = extractedBirth.replace(/[^0-9]/g, "");
       
@@ -956,39 +856,21 @@ Return the parsed values in Korean language inside the requested JSON schema.`
       const isBirthMismatch = cleanBirthSub && cleanBirthExt && cleanBirthSub !== cleanBirthExt;
 
       if (isNameMismatch || isBirthMismatch) {
-        let mismatchDetail = "⚠️ 제출 정보와 수료증 분석 정보가 일치하지 않습니다:\n";
-        if (isNameMismatch) {
-          mismatchDetail += `• 제출 성명: ${subName} ↔ AI 분석: ${extractedName}\n`;
-        }
-        if (isBirthMismatch) {
-          mismatchDetail += `• 제출 생년월일: ${subBirth} ↔ AI 분석: ${extractedBirth}\n`;
-        }
-        mismatchDetail += "\n정확한 서류 수료 대상인지 확인 후 시간 승인을 진행해 주십시오.";
         setAiFeedback({
           type: "mismatch",
-          message: mismatchDetail,
+          message: `⚠️ 정보 불일치:\n• 제출 성명: ${subName} ↔ AI 분석: ${extractedName}\n• 제출 생년월일: ${subBirth} ↔ AI 분석: ${extractedBirth}`
         });
       } else {
         setAiFeedback({
           type: "success",
-          message: `✨ AI 분석 완료: 과정명과 이수시간을 자동으로 입력했습니다. (수료증 정보: ${extractedName || "성명미상"}, ${extractedBirth || "생년월일미상"})`,
+          message: `✨ AI 분석 완료: 과정명과 이수시간을 자동으로 입력했습니다.`,
         });
       }
     } catch (error: any) {
       console.error("AI Analysis error:", error);
-      let errMsg = error.message || "";
-      if (
-        errMsg.includes("API key expired") || 
-        errMsg.includes("API_KEY_INVALID") || 
-        errMsg.includes("INVALID_ARGUMENT") || 
-        errMsg.includes("key expired") ||
-        errMsg.includes("400")
-      ) {
-        errMsg = "현재 입력 및 서버에 설정된 Gemini API 키가 올바르지 않거나 만료되었습니다.\n우측 상단의 [⚙️ API Key 설정] 메뉴에서 유효한 Gemini API Key를 새로 등록하여 주십시오 (구글 AI 스튜디오에서 무료 발급 가능).";
-      }
       setAiFeedback({
         type: "error",
-        message: "분석 실패: " + errMsg
+        message: "분석 실패: " + error.message
       });
     } finally {
       setAiAnalysisLoading(false);
