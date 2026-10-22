@@ -70,18 +70,8 @@ export async function analyzeCertificateWithGemini(
 
     const ai = new GoogleGenAI({ apiKey: cleanKey });
 
-    const prompt = `당신은 대한민국 장애인활동지원사 교육 수료증 전문 분석관입니다.
-첨부된 수료증 사진/문서(이미지 또는 PDF)를 꼼꼼하게 판독하여 다음 수료대장 정보를 정밀 추출해 주세요.
-
-추출 항목:
-1. assistantName: 교육 이수자 성명
-2. birthDate: 생년월일 (YYMMDD 형식)
-3. courseName: 교육과정명
-4. trainingHours: 교육 인정 시간 (숫자와 '시간' 표기)
-5. institution: 수료증 발급기관
-6. completionDate: 수료/이수일자
-7. certNumber: 수료증 발급 번호
-8. summary: 판독 내용 요약 1문장`;
+    const prompt = `수료증을 분석하여 JSON으로 추출하세요:
+assistantName, birthDate(YYMMDD), courseName, trainingHours(숫자+시간), institution, completionDate, certNumber, summary.`;
 
     // Robust list of models
     const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-flash-latest"];

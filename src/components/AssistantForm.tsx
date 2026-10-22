@@ -36,7 +36,7 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const compressImage = (dataUrl: string, maxWidth = 1200, maxHeight = 1200, quality = 0.75): Promise<string> => {
+  const compressImage = (dataUrl: string, maxWidth = 800, maxHeight = 800, quality = 0.6): Promise<string> => {
     return new Promise((resolve) => {
       if (!dataUrl.startsWith("data:image/")) {
         resolve(dataUrl);
@@ -65,7 +65,7 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        resolve(canvas.toDataURL("image/jpeg", 0.6));
       };
       img.onerror = () => resolve(dataUrl);
     });
