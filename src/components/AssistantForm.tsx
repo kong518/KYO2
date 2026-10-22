@@ -289,7 +289,14 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
                 disabled={isSubmitting}
                 className="w-full sm:w-auto px-8 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 text-white font-semibold text-xs tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                {isSubmitting ? '전송 중...' : '수료증 전송하기'}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>전송 중...</span>
+                  </>
+                ) : (
+                  '수료증 전송하기'
+                )}
               </button>
             </div>
           </form>
