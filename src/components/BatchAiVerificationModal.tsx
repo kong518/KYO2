@@ -192,7 +192,7 @@ export default function BatchAiVerificationModal({
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <span>수료증 AI 일괄 확인 및 자동 목록화</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-extrabold">
-                  Gemini 2.5 Flash
+                  Gemini 3.8 Flash
                 </span>
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5">

@@ -81,50 +81,63 @@ export async function analyzeCertificateWithGemini(
 7. certNumber: 수료증 발급 번호 (예: 제2024-호, 번호가 보이지 않으면 빈 문자열)
 8. summary: 판독 내용 요약 1문장 (예: 수원재활센터 보수교육 8시간 이수 확인)`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
+    const modelsToTry = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash"];
+    let response: any = null;
+    let lastError: any = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
             {
-              inlineData: {
-                mimeType,
-                data: base64,
-              },
-            },
-            {
-              text: prompt,
+              role: "user",
+              parts: [
+                {
+                  inlineData: {
+                    mimeType,
+                    data: base64,
+                  },
+                },
+                {
+                  text: prompt,
+                },
+              ],
             },
           ],
-        },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            assistantName: { type: Type.STRING },
-            birthDate: { type: Type.STRING },
-            courseName: { type: Type.STRING },
-            trainingHours: { type: Type.STRING },
-            institution: { type: Type.STRING },
-            completionDate: { type: Type.STRING },
-            certNumber: { type: Type.STRING },
-            summary: { type: Type.STRING },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                assistantName: { type: Type.STRING },
+                birthDate: { type: Type.STRING },
+                courseName: { type: Type.STRING },
+                trainingHours: { type: Type.STRING },
+                institution: { type: Type.STRING },
+                completionDate: { type: Type.STRING },
+                certNumber: { type: Type.STRING },
+                summary: { type: Type.STRING },
+              },
+              required: ["courseName", "trainingHours"],
+            },
           },
-          required: ["courseName", "trainingHours"],
-        },
-      },
-    });
+        });
+
+        if (response && response.text) {
+          break;
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[AI Verification] Model ${modelName} failed, trying fallback:`, err?.message || err);
+      }
+    }
+
+    if (!response || !response.text) {
+      throw lastError || new Error("AI 모델로부터 판독 결과를 수신하지 못했습니다.");
+    }
 
     const text = response.text;
-    if (!text) {
-      return {
-        success: false,
-        error: "AI 모델로부터 판독 결과를 수신하지 못했습니다.",
-      };
-    }
 
     try {
       const parsed = JSON.parse(text);

@@ -25,6 +25,8 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
   const [assistantName, setAssistantName] = useState('');
   const [birthDate, setBirthDate] = useState('');
   
+  
+  
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [fileType, setFileType] = useState<'image' | 'pdf' | null>(null);
   const [fileName, setFileName] = useState<string>('');
@@ -60,16 +62,6 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
     if (!birthDate.trim() || birthDate.length < 6) {
       setSubmitError('본인의 생년월일 6자리(예: 740125)를 입력해주세요.');
       return;
-    }
-
-    try {
-      const banned = JSON.parse(localStorage.getItem("BANNED_ASSISTANT_NAMES") || "[]");
-      if (banned.includes(assistantName.trim())) {
-        setSubmitError("해당 활동지원사는 관리자에 의해 제출이 제한(차단)되었습니다. 관리 센터에 문의해 주세요.");
-        return;
-      }
-    } catch {
-      // ignore
     }
 
     setIsSubmitting(true);
@@ -234,6 +226,8 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
                     className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 bg-slate-50/30 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-colors font-medium shadow-xs"
                   />
                 </div>
+
+            
               </div>
             </div>
             {submitError && (

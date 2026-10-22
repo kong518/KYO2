@@ -87,6 +87,7 @@ export default function App() {
   });
   const [adminName, setAdminName] = useState<string>("");
   const [adminPasscode, setAdminPasscode] = useState<string>("");
+  const [adminApiKeyInput, setAdminApiKeyInput] = useState<string>("");
   const [geminiApiKey, setGeminiApiKey] = useState<string>(() => {
     return localStorage.getItem("USER_GEMINI_API_KEY") || "";
   });
@@ -202,6 +203,11 @@ export default function App() {
           isBanned: false,
           createdAt: new Date().toISOString()
         });
+
+        if (adminApiKeyInput.trim()) {
+          localStorage.setItem("USER_GEMINI_API_KEY", adminApiKeyInput.trim());
+          setGeminiApiKey(adminApiKeyInput.trim());
+        }
 
         setAuthSuccess(`'${name}' 관리자 계정이 성공적으로 등록되었습니다! 대시보드로 즉시 입장합니다.`);
         sessionStorage.setItem("isAdminLoggedIn", "true");
@@ -443,17 +449,49 @@ export default function App() {
     assistantName: string; 
     birthDate: string; 
     certificateImage: string;
+    apiKey?: string;
   }) => {
     try {
+      let extractedCourse = "장애인활동지원사 교육";
+      let extractedHours = "8시간";
+      let extractedInstitution = "";
+      let extractedCompletionDate = "";
+      let extractedCertNumber = "";
+      let extractedSummary = "자동 판독 완료";
+      let isAiParsed = false;
+
+      const activeApiKey = newSub.apiKey?.trim() || geminiApiKey || localStorage.getItem("USER_GEMINI_API_KEY") || "";
+      
+      if (activeApiKey && newSub.certificateImage) {
+        try {
+          const ocrResult = await analyzeCertificateWithGemini(newSub.certificateImage, activeApiKey);
+          if (ocrResult.success) {
+            extractedCourse = ocrResult.courseName || extractedCourse;
+            extractedHours = ocrResult.trainingHours || extractedHours;
+            extractedInstitution = ocrResult.institution || "";
+            extractedCompletionDate = ocrResult.completionDate || "";
+            extractedCertNumber = ocrResult.certNumber || "";
+            extractedSummary = ocrResult.summary || "AI 자동 판독 완료";
+            isAiParsed = true;
+          }
+        } catch (ocrErr) {
+          console.warn("Automatic submission OCR analysis note:", ocrErr);
+        }
+      }
+
       const submitData = {
         assistantName: newSub.assistantName,
         birthDate: newSub.birthDate,
         certificateImage: newSub.certificateImage,
         submittedAt: new Date().toISOString(),
-        isCompleted: false,
-        trainingHours: "",
-        courseName: "",
-        managerNotes: "",
+        isCompleted: false, // Default to pending until manager clicks 교육수강확인
+        trainingHours: extractedHours,
+        courseName: extractedCourse,
+        institution: extractedInstitution,
+        completionDate: extractedCompletionDate,
+        certNumber: extractedCertNumber,
+        managerNotes: isAiParsed ? extractedSummary : "수료증 접수 완료",
+        aiVerified: isAiParsed,
       };
 
       const docSnap = await addDoc(collection(db, "submissions"), submitData);
@@ -467,9 +505,9 @@ export default function App() {
       
       // Auto-focus selected
       setSelectedSubmissionId(docSnap.id);
-      setCourseName("");
-      setTrainingHours("");
-      setManagerNotes("");
+      setCourseName(extractedCourse);
+      setTrainingHours(extractedHours);
+      setManagerNotes(submitData.managerNotes);
       
       return { success: true };
     } catch (error: any) {

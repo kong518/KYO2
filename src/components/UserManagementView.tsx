@@ -6,19 +6,14 @@
 import React, { useState, useEffect } from "react";
 import { 
   Users, 
-  ShieldAlert, 
-  ShieldCheck, 
   Ban, 
   CheckCircle2, 
   Trash2, 
   Search, 
   RefreshCw, 
-  UserX, 
   UserCheck,
-  Calendar,
   Key,
-  Shield,
-  FileText
+  Shield
 } from "lucide-react";
 import { AdminUser, EducationCertificate } from "../types";
 import { db } from "../firebase";
@@ -28,8 +23,7 @@ import {
   doc, 
   updateDoc, 
   deleteDoc, 
-  query, 
-  orderBy 
+  query 
 } from "firebase/firestore";
 
 interface UserManagementViewProps {
@@ -40,21 +34,11 @@ interface UserManagementViewProps {
 
 export default function UserManagementView({
   currentAdminName,
-  submissions,
-  onRefreshData,
 }: UserManagementViewProps) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-  const [bannedAssistants, setBannedAssistants] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem("BANNED_ASSISTANT_NAMES");
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -147,36 +131,6 @@ export default function UserManagementView({
     }
   };
 
-  const handleToggleAssistantBan = (name: string) => {
-    const isBanned = bannedAssistants.includes(name);
-    let updated: string[];
-    if (isBanned) {
-      updated = bannedAssistants.filter((n) => n !== name);
-    } else {
-      if (!window.confirm(`'${name}' 활동지원사를 차단(벤)하시겠습니까?`)) return;
-      updated = [...bannedAssistants, name];
-    }
-    setBannedAssistants(updated);
-    localStorage.setItem("BANNED_ASSISTANT_NAMES", JSON.stringify(updated));
-  };
-
-  // Group submissions by assistant name
-  const assistantStatsMap = new Map<string, { count: number; completedCount: number; birthDate: string }>();
-  submissions.forEach((s) => {
-    const name = s.assistantName.trim();
-    if (!name) return;
-    const existing = assistantStatsMap.get(name) || { count: 0, completedCount: 0, birthDate: s.birthDate };
-    existing.count += 1;
-    if (s.isCompleted) existing.completedCount += 1;
-    assistantStatsMap.set(name, existing);
-  });
-
-  const assistantList = Array.from(assistantStatsMap.entries()).map(([name, data]) => ({
-    name,
-    ...data,
-    isBanned: bannedAssistants.includes(name),
-  }));
-
   const filteredUsers = users.filter((u) =>
     u.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -185,11 +139,10 @@ export default function UserManagementView({
     total: users.length,
     active: users.filter((u) => !u.isBanned).length,
     banned: users.filter((u) => u.isBanned).length,
-    assistantsTotal: assistantList.length,
   };
 
   return (
-    <div className="space-y-8 font-sans" id="user-management-view">
+    <div className="space-y-6 font-sans" id="user-management-view">
       {/* Header Banner */}
       <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -198,10 +151,10 @@ export default function UserManagementView({
               <Users className="w-4 h-4" />
             </div>
             <h3 className="text-base font-bold text-slate-900">
-              가입 회원 및 관리자 계정 명단 관리
+              가입 관리자 계정 명단 및 벤(차단) 제어
             </h3>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">
-              마스터 권한 (admin)
+              마스터 관리자 권한 (admin)
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
@@ -221,7 +174,7 @@ export default function UserManagementView({
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs">
           <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase block">전체 등록 관리자</span>
           <h4 className="text-2xl font-bold mt-1 text-slate-900">{stats.total}명</h4>
@@ -236,11 +189,6 @@ export default function UserManagementView({
           <span className="text-[10px] font-bold tracking-wider text-rose-600 uppercase block">차단(벤)된 계정</span>
           <h4 className="text-2xl font-bold mt-1 text-rose-900">{stats.banned}명</h4>
         </div>
-
-        <div className="p-5 bg-indigo-50/50 border border-indigo-100 rounded-2xl shadow-2xs">
-          <span className="text-[10px] font-bold tracking-wider text-indigo-600 uppercase block">수료증 제출 지원사</span>
-          <h4 className="text-2xl font-bold mt-1 text-indigo-900">{stats.assistantsTotal}명</h4>
-        </div>
       </div>
 
       {/* Admin Users Table Section */}
@@ -249,10 +197,10 @@ export default function UserManagementView({
           <div>
             <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Shield className="w-4 h-4 text-indigo-600" />
-              <span>등록 관리자 계정 목록</span>
+              <span>가입 관리자 계정 목록</span>
             </h4>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              총 {filteredUsers.length}개의 관리자 계정이 조회되었습니다.
+              총 {filteredUsers.length}개의 관리자 계정이 등록되어 있습니다.
             </p>
           </div>
 
@@ -395,93 +343,6 @@ export default function UserManagementView({
                     </tr>
                   );
                 })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Activity Assistant Submitters Roster Section */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-        <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-          <div>
-            <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-indigo-600" />
-              <span>수료증 제출 활동지원사 명단 ({assistantList.length}명)</span>
-            </h4>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              온라인 수료증 제출 시스템을 통해 서류를 접수한 활동지원사 명단입니다.
-            </p>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[11px] font-bold">
-              <tr>
-                <th className="px-5 py-3">지원사 성명</th>
-                <th className="px-4 py-3">생년월일</th>
-                <th className="px-4 py-3">제출 건수</th>
-                <th className="px-4 py-3">이수 확인 건수</th>
-                <th className="px-4 py-3">상태</th>
-                <th className="px-5 py-3 text-right">제출 차단 제어</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {assistantList.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">
-                    접수된 활동지원사 수료증이 아직 없습니다.
-                  </td>
-                </tr>
-              ) : (
-                assistantList.map((ast) => (
-                  <tr
-                    key={ast.name}
-                    className={`hover:bg-slate-50/80 transition-colors ${
-                      ast.isBanned ? "bg-rose-50/20" : ""
-                    }`}
-                  >
-                    <td className="px-5 py-3 font-bold text-slate-900">
-                      {ast.name}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-slate-600">
-                      {ast.birthDate || "-"}
-                    </td>
-                    <td className="px-4 py-3 font-mono font-bold text-slate-700">
-                      {ast.count}건
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono font-bold text-emerald-600">
-                        {ast.completedCount}건 완료
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {ast.isBanned ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-full">
-                          <Ban className="w-3 h-3" /> 제출 차단됨
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                          <CheckCircle2 className="w-3 h-3" /> 정상
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleAssistantBan(ast.name)}
-                        className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
-                          ast.isBanned
-                            ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200"
-                            : "bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200"
-                        }`}
-                      >
-                        {ast.isBanned ? "차단 해제" : "제출 벤(차단)"}
-                      </button>
-                    </td>
-                  </tr>
-                ))
               )}
             </tbody>
           </table>
