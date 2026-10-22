@@ -48,6 +48,7 @@ import BatchAiVerificationModal from "./components/BatchAiVerificationModal";
 import UserManagementView from "./components/UserManagementView";
 import { analyzeCertificateWithGemini } from "./services/aiVerification";
 import { EducationCertificate, EducationStats } from "./types";
+import * as XLSX from "xlsx";
 
 const isPdfFile = (imgUrl: string | undefined | null) => {
   if (!imgUrl) return false;
@@ -80,10 +81,13 @@ export default function App() {
 
   // Authentication status
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
-    return sessionStorage.getItem("isAdminLoggedIn") === "true";
+    return localStorage.getItem("isAdminLoggedIn") === "true" || sessionStorage.getItem("isAdminLoggedIn") === "true";
   });
   const [currentAdminName, setCurrentAdminName] = useState<string>(() => {
-    return sessionStorage.getItem("adminUserName") || "admin";
+    return localStorage.getItem("adminUserName") || sessionStorage.getItem("adminUserName") || "admin";
+  });
+  const [rememberMe, setRememberMe] = useState<boolean>(() => {
+    return localStorage.getItem("isAdminLoggedIn") === "true";
   });
   const [adminName, setAdminName] = useState<string>("");
   const [adminPasscode, setAdminPasscode] = useState<string>("");
@@ -301,8 +305,15 @@ export default function App() {
 
       // Match found!
       setAuthSuccess(`'${name}' 관리자님 환영합니다! 대시보드로 이동합니다.`);
-      sessionStorage.setItem("isAdminLoggedIn", "true");
-      sessionStorage.setItem("adminUserName", name);
+      
+      const storage = rememberMe ? localStorage : sessionStorage;
+      storage.setItem("isAdminLoggedIn", "true");
+      storage.setItem("adminUserName", name);
+      
+      // Clear the other storage
+      if (rememberMe) sessionStorage.removeItem("isAdminLoggedIn");
+      else localStorage.removeItem("isAdminLoggedIn");
+
       setCurrentAdminName(name);
 
       setTimeout(() => {
@@ -323,8 +334,14 @@ export default function App() {
       // Fallback: If network error but user entered master admin admin/1130:
       if ((name.toLowerCase() === "admin" || name === "관리자") && pass === "1130") {
         setAuthSuccess("마스터 관리자(admin) 인증 완료! 대시보드로 이동합니다.");
-        sessionStorage.setItem("isAdminLoggedIn", "true");
-        sessionStorage.setItem("adminUserName", "admin (마스터)");
+        
+        const storage = rememberMe ? localStorage : sessionStorage;
+        storage.setItem("isAdminLoggedIn", "true");
+        storage.setItem("adminUserName", "admin (마스터)");
+        
+        if (rememberMe) sessionStorage.removeItem("isAdminLoggedIn");
+        else localStorage.removeItem("isAdminLoggedIn");
+
         setCurrentAdminName("admin (마스터)");
         setTimeout(() => {
           setIsAdminLoggedIn(true);
@@ -343,6 +360,8 @@ export default function App() {
   const handleAdminLogout = () => {
     sessionStorage.removeItem("isAdminLoggedIn");
     sessionStorage.removeItem("adminUserName");
+    localStorage.removeItem("isAdminLoggedIn");
+    localStorage.removeItem("adminUserName");
     setIsAdminLoggedIn(false);
     setUserMode("assistant");
     setAdminName("");
@@ -443,6 +462,69 @@ export default function App() {
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const handleExportExcel = () => {
+    if (submissions.length === 0) {
+      alert("다운로드할 데이터가 없습니다.");
+      return;
+    }
+
+    const formatHoursNumber = (raw: string) => {
+      if (!raw) return 0;
+      let cleaned = raw.trim();
+      cleaned = cleaned.replace(/시간시간/g, "시간");
+      cleaned = cleaned.replace(/(\d+분)\s*시간/g, "$1");
+      const num = parseFloat(cleaned.replace(/[^0-9.]/g, ""));
+      return isNaN(num) ? 0 : num;
+    };
+
+    const lastRow = submissions.length + 3;
+
+    const wsData = [
+      ["장애인활동지원 온라인 교육 목록", "", "", "", ""],
+      ["총 이수 누적시간 (필터 반영):", "", "", { t: 'n', f: `SUBTOTAL(9,D4:D${lastRow})`, z: '#,##0"시간"' }, ""],
+      ["지원사 성명", "생년월일", "구분", "승인 교육시간", "이수 교육과정명"],
+    ];
+
+    submissions.forEach((s) => {
+      const hoursNum = formatHoursNumber(s.trainingHours);
+      wsData.push([
+        s.assistantName || "",
+        s.birthDate || "",
+        "이수",
+        { t: 'n', v: hoursNum, z: '#,##0"시간"' },
+        s.courseName || "미입력"
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    ws['!cols'] = [
+      { wch: 20 },
+      { wch: 9 },
+      { wch: 10 },
+      { wch: 19 },
+      { wch: 50 },
+    ];
+
+    ws['!rows'] = [
+      { hpt: 35 },
+      { hpt: 23 },
+      { hpt: 30 },
+    ];
+    for (let i = 0; i < submissions.length; i++) {
+      ws['!rows'].push({ hpt: 20 });
+    }
+
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "교육수료목록");
+    XLSX.writeFile(wb, `장애인활동지원_온라인교육목록_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const handleNewSubmission = async (newSub: { 
@@ -1084,6 +1166,16 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                       className="w-full px-4 py-2.5 border border-slate-200 bg-slate-50/70 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-2xs"
                     />
                   </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer pt-1">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-[11px] font-semibold text-slate-600">자동 로그인 유지</span>
+                  </label>
                   
                   <button
                     type="button"
@@ -1191,169 +1283,12 @@ Return the parsed values in Korean language inside the requested JSON schema.`
                   
                   <button
                     id="btn-fake-export"
-                    onClick={() => {
-                      if (submissions.length === 0) {
-                        alert("다운로드할 데이터가 없습니다.");
-                        return;
-                      }
-
-                      const formatHoursNumber = (raw: string) => {
-                        if (!raw) return 0;
-                        let cleaned = raw.trim();
-                        cleaned = cleaned.replace(/시간시간/g, "시간");
-                        cleaned = cleaned.replace(/(\d+분)\s*시간/g, "$1");
-                        const num = parseFloat(cleaned.replace(/[^0-9.]/g, ""));
-                        return isNaN(num) ? 0 : num;
-                      };
-
-                      const lastRow = submissions.length + 3; // data starts at row 4
-
-                      const totalHoursSum = submissions
-                        .filter((s) => s.trainingHours)
-                        .reduce((sum, s) => sum + formatHoursNumber(s.trainingHours), 0);
-
-                      const dataRowsXml = submissions.map((s, idx) => {
-                        const hoursNum = formatHoursNumber(s.trainingHours);
-                        return `
-   <Row ss:Height="20">
-    <Cell ss:StyleID="centerText"><Data ss:Type="String">${s.assistantName || ""}</Data></Cell>
-    <Cell ss:StyleID="centerText"><Data ss:Type="String">${s.birthDate || ""}</Data></Cell>
-    <Cell ss:StyleID="centerText"><Data ss:Type="String">이수</Data></Cell>
-    <Cell ss:StyleID="centerNumber"><Data ss:Type="Number">${hoursNum}</Data></Cell>
-    <Cell ss:StyleID="centerText"><Data ss:Type="String">${s.courseName || "미입력"}</Data></Cell>
-   </Row>`;
-                      }).join("");
-
-                      const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Styles>
-  <Style ss:ID="Default" ss:Name="Normal">
-   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
-   <Borders/>
-   <Font ss:FontName="Malgun Gothic" ss:Size="11"/>
-   <Interior/>
-   <Protection/>
-  </Style>
-  <Style ss:ID="TitleStyle">
-   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
-   <Font ss:FontName="Malgun Gothic" ss:Size="16" ss:Bold="1"/>
-  </Style>
-  <Style ss:ID="SummaryStyle">
-   <Alignment ss:Vertical="Center" ss:Horizontal="Right"/>
-   <Font ss:FontName="Malgun Gothic" ss:Size="11" ss:Bold="1"/>
-   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="SummaryValueStyle">
-   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
-   <Font ss:FontName="Malgun Gothic" ss:Size="11" ss:Bold="1"/>
-   <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
-   <NumberFormat ss:Format="#,##0&quot;시간&quot;"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="HeaderStyle">
-   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
-   <Font ss:FontName="Malgun Gothic" ss:Size="11" ss:Bold="1"/>
-   <Interior ss:Color="#E0E7FF" ss:Pattern="Solid"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="centerText">
-   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="centerNumber">
-   <Alignment ss:Vertical="Center" ss:Horizontal="Center"/>
-   <NumberFormat ss:Format="#,##0&quot;시간&quot;"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-   </Borders>
-  </Style>
- </Styles>
- <Worksheet ss:Name="교육수료목록">
-  <Table ss:ExpandedColumnCount="5" ss:ExpandedRowCount="${lastRow}" x:FullColumns="1" x:FullRows="1" ss:DefaultRowHeight="20">
-   <Column ss:Width="160"/> <!-- A열 너비 20 (~160px) -->
-   <Column ss:Width="72"/>  <!-- B열 너비 9 (~72px) -->
-   <Column ss:Width="85"/>  <!-- C열 구분 (~85px) -->
-   <Column ss:Width="150"/> <!-- D열 너비 19 (~150px) -->
-   <Column ss:Width="380"/> <!-- E열 너비 50 (~380px) -->
-   
-   <!-- Row 1: Title (Height 35) -->
-   <Row ss:Height="35">
-    <Cell ss:MergeAcross="4" ss:StyleID="TitleStyle"><Data ss:Type="String">장애인활동지원 온라인 교육 목록</Data></Cell>
-   </Row>
-   
-   <!-- Row 2: Summary with SUBTOTAL formula (Height 23) -->
-   <Row ss:Height="23">
-    <Cell ss:MergeAcross="3" ss:StyleID="SummaryStyle"><Data ss:Type="String">총 이수 누적시간 (필터 반영):</Data></Cell>
-    <Cell ss:StyleID="SummaryValueStyle" ss:Formula="=SUBTOTAL(9,R4C4:R${lastRow}C4)"><Data ss:Type="Number">${totalHoursSum}</Data></Cell>
-   </Row>
-   
-   <!-- Row 3: Header (Height 30) -->
-   <Row ss:Height="30">
-    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">지원사 성명</Data></Cell>
-    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">생년월일</Data></Cell>
-    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">구분</Data></Cell>
-    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">승인 교육시간</Data></Cell>
-    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">이수 교육과정명</Data></Cell>
-   </Row>
-   
-   ${dataRowsXml}
-  </Table>
-  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
-   <PageSetup>
-    <Header x:Margin="0.3"/>
-    <Footer x:Margin="0.3"/>
-    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
-   </PageSetup>
-   <Selected/>
-   <AutoFilter x:Range="R3C1:R${lastRow}C5" xmlns="urn:schemas-microsoft-com:office:excel"></AutoFilter>
-   <ProtectObjects>False</ProtectObjects>
-   <ProtectScenarios>False</ProtectScenarios>
-  </WorksheetOptions>
- </Worksheet>
-</Workbook>`;
-
-                      const blob = new Blob(["\uFEFF" + xmlContent], { type: "application/vnd.ms-excel;charset=utf-8;" });
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement("a");
-                      link.setAttribute("href", url);
-                      link.setAttribute("download", `장애인활동지원_온라인교육목록_${new Date().toISOString().slice(0,10)}.xml`);
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    }}
+                    onClick={handleExportExcel}
                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-indigo-100 cursor-pointer"
+                    title="정품 엑셀 파일(.xlsx) 다운로드"
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5" />
-                    엑셀 대장 다운로드 (CSV)
+                    <span>엑셀 대장 다운로드 (.xlsx)</span>
                   </button>
                 </div>
               </div>
