@@ -482,35 +482,34 @@ export default function App() {
     const wsData = [
       ["장애인활동지원 온라인 교육 목록", "", "", "", ""],
       ["", "", "", "", ""],
-      ["지원사 성명", "생년월일", "구분", "승인 교육시간", "이수 교육과정명"],
+      ["지원사 성명", "생년월일", "교육시간", "이수 교육과정명", ""],
     ];
 
     submissions.forEach((s) => {
       wsData.push([
         s.assistantName || "",
         s.birthDate || "",
-        "이수",
         formatHoursNumber(s.trainingHours),
-        s.courseName || "미입력"
+        s.courseName || "미입력",
+        ""
       ]);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-    // Apply styles and SUBTOTAL formula
     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:E1');
     const lastRow = range.e.r + 1;
     
-    // SUBTOTAL in row 2, col D (index 3)
-    ws['D2'] = { t: 'n', f: `SUBTOTAL(9,D4:D${lastRow})`, z: '#,##0"시간"' };
+    // SUBTOTAL in row 2, col C (index 2)
+    ws['C2'] = { t: 'n', f: `SUBTOTAL(9,C4:C${lastRow})`, z: '#,##0"시간"' };
     ws['A2'] = { t: 's', v: '총 이수 누적시간 (필터 반영):' };
     
-    // Styling
+    // Column Widths
     ws['!cols'] = [
-      { wch: 20 }, { wch: 9 }, { wch: 10 }, { wch: 19 }, { wch: 50 },
+      { wch: 20 }, { wch: 15 }, { wch: 19 }, { wch: 60 }, { wch: 0 },
     ];
     
-    // Format cells for center alignment
+    // Default Cell Style (Center)
     for (let r = 0; r <= range.e.r; r++) {
       for (let c = 0; c <= range.e.c; c++) {
         const cellAddress = XLSX.utils.encode_cell({ r, c });
@@ -535,8 +534,19 @@ export default function App() {
       border: { bottom: { style: 'thin', color: { rgb: '9ca3af' } } }
     };
     
-    // Header Style
+    // Summary Row Style (옅은 회색)
     for (let c = 0; c < 5; c++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 1, c });
+      if (ws[cellAddress]) {
+          ws[cellAddress].s = {
+            ...ws[cellAddress].s,
+            fill: { fgColor: { rgb: 'f3f4f6' } }
+          };
+      }
+    }
+
+    // Header Style
+    for (let c = 0; c < 4; c++) {
         const cell = ws[XLSX.utils.encode_cell({ r: 2, c })];
         if (cell) {
             cell.s = {
@@ -547,9 +557,17 @@ export default function App() {
         }
     }
 
+    // Row Heights
+    ws['!rows'] = [
+      { hpt: 35 }, { hpt: 25 }, { hpt: 25 },
+    ];
+    for (let i = 0; i < submissions.length; i++) {
+      ws['!rows'].push({ hpt: 20 });
+    }
+
     ws['!merges'] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 1 } },
     ];
 
     ws['!autofilter'] = { ref: `A3:E${lastRow}` };
