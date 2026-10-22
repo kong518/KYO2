@@ -283,11 +283,19 @@ export default function AssistantForm({ onNewSubmission }: AssistantFormProps) {
                 <span>{submitError}</span>
               </div>
             )}
-            <div className="flex justify-end pt-4 border-t border-slate-100">
+            <div className="flex flex-col sm:flex-row items-center justify-between pt-4 border-t border-slate-100 gap-3">
+              <div className="text-xs text-slate-500 italic">
+                {isSubmitting && (
+                  <span className="flex items-center gap-1.5 text-indigo-600 font-medium">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    전송까지 시간이 소요될 수 있으니 제출완료가 나타날 때까지 기다려주세요.
+                  </span>
+                )}
+              </div>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full sm:w-auto px-8 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 text-white font-semibold text-xs tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full sm:w-auto px-8 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 text-white font-semibold text-xs tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ml-auto"
               >
                 {isSubmitting ? (
                   <>

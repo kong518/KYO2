@@ -584,46 +584,21 @@ export default function App() {
     apiKey?: string;
   }) => {
     try {
-      let extractedCourse = "장애인활동지원사 교육";
-      let extractedHours = "8시간";
-      let extractedInstitution = "";
-      let extractedCompletionDate = "";
-      let extractedCertNumber = "";
-      let extractedSummary = "자동 판독 완료";
-      let isAiParsed = false;
-
       const activeApiKey = newSub.apiKey?.trim() || geminiApiKey || localStorage.getItem("USER_GEMINI_API_KEY") || "";
-      
-      if (activeApiKey && newSub.certificateImage) {
-        try {
-          const ocrResult = await analyzeCertificateWithGemini(newSub.certificateImage, activeApiKey);
-          if (ocrResult.success) {
-            extractedCourse = ocrResult.courseName || extractedCourse;
-            extractedHours = ocrResult.trainingHours || extractedHours;
-            extractedInstitution = ocrResult.institution || "";
-            extractedCompletionDate = ocrResult.completionDate || "";
-            extractedCertNumber = ocrResult.certNumber || "";
-            extractedSummary = ocrResult.summary || "AI 자동 판독 완료";
-            isAiParsed = true;
-          }
-        } catch (ocrErr) {
-          console.warn("Automatic submission OCR analysis note:", ocrErr);
-        }
-      }
 
       const submitData = {
         assistantName: newSub.assistantName,
         birthDate: newSub.birthDate,
         certificateImage: newSub.certificateImage,
         submittedAt: new Date().toISOString(),
-        isCompleted: false, // Default to pending until manager clicks 교육수강확인
-        trainingHours: extractedHours,
-        courseName: extractedCourse,
-        institution: extractedInstitution,
-        completionDate: extractedCompletionDate,
-        certNumber: extractedCertNumber,
-        managerNotes: isAiParsed ? extractedSummary : "수료증 접수 완료",
-        aiVerified: isAiParsed,
+        isCompleted: false,
+        trainingHours: "8시간", // Default
+        courseName: "장애인활동지원사 교육", // Default
+        institution: "",
+        completionDate: "",
+        certNumber: "",
+        managerNotes: "AI 분석 중...", // Placeholder
+        aiVerified: false,
       };
 
       const docSnap = await addDoc(collection(db, "submissions"), submitData);
@@ -634,19 +609,51 @@ export default function App() {
 
       // Live state syncing locally to let user feel immediate satisfaction
       setSubmissions((prev) => [itemWithId, ...prev]);
-      
-      // Auto-focus selected
       setSelectedSubmissionId(docSnap.id);
-      setCourseName(extractedCourse);
-      setTrainingHours(extractedHours);
-      setManagerNotes(submitData.managerNotes);
+      
+      // Trigger Background Analysis
+      if (activeApiKey && newSub.certificateImage) {
+        (async () => {
+            try {
+              const ocrResult = await analyzeCertificateWithGemini(newSub.certificateImage, activeApiKey);
+              if (ocrResult.success) {
+                const docRef = doc(db, "submissions", docSnap.id);
+                const updates = {
+                  courseName: ocrResult.courseName || "장애인활동지원사 교육",
+                  trainingHours: ocrResult.trainingHours || "8시간",
+                  institution: ocrResult.institution || "",
+                  completionDate: ocrResult.completionDate || "",
+                  certNumber: ocrResult.certNumber || "",
+                  managerNotes: ocrResult.summary || "AI 자동 판독 완료",
+                  aiVerified: true,
+                  isCompleted: true, // Automatically completed when OCR succeeds!
+                  reviewedAt: new Date().toISOString(),
+                };
+                await updateDoc(docRef, updates);
+              } else {
+                await updateDoc(doc(db, "submissions", docSnap.id), { 
+                  managerNotes: "담당자 확인필요 (AI 분석 실패)",
+                  aiVerified: false,
+                  isCompleted: false,
+                });
+              }
+            } catch (ocrErr) {
+              console.error("Background AI analysis failed:", ocrErr);
+              await updateDoc(doc(db, "submissions", docSnap.id), { 
+                managerNotes: "담당자 확인필요 (AI 분석 오류)",
+                aiVerified: false,
+                isCompleted: false,
+              });
+            }
+        })();
+      }
       
       return { success: true };
     } catch (error: any) {
       console.error("Failed to submit certificate to Firestore:", error);
       return { 
         success: false, 
-        error: error.message || "데이터 저장 중 오류가 발생했습니다. 보안 제약을 확인해 주세요." 
+        error: error.message || "데이터 저장 중 오류가 발생했습니다." 
       };
     }
   };
@@ -1433,6 +1440,10 @@ export default function App() {
                               {sub.isCompleted ? (
                                 <span className="px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold rounded-full">
                                   이수 완료
+                                </span>
+                              ) : !sub.aiVerified || sub.managerNotes?.includes("확인필요") ? (
+                                <span className="px-2 py-0.5 bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-bold rounded-full">
+                                  담당자 확인필요
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold rounded-full">
