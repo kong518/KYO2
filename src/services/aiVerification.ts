@@ -81,7 +81,7 @@ export async function analyzeCertificateWithGemini(
 7. certNumber: 수료증 발급 번호 (예: 제2024-호, 번호가 보이지 않으면 빈 문자열)
 8. summary: 판독 내용 요약 1문장 (예: 수원재활센터 보수교육 8시간 이수 확인)`;
 
-    const modelsToTry = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash"];
+    const modelsToTry = ["gemini-1.5-flash", "gemini-flash-latest", "gemini-2.0-flash"];
     let response: any = null;
     let lastError: any = null;
 
