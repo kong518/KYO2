@@ -49,7 +49,7 @@ function parseDataUrl(dataUrl: string): { mimeType: string; base64: string } {
 }
 
 /**
- * Verifies a single certificate image/PDF using Google Gemini 2.5 Flash
+ * Verifies a single certificate image/PDF using Google Gemini
  */
 export async function analyzeCertificateWithGemini(
   certificateDataUrl: string,
@@ -70,8 +70,12 @@ export async function analyzeCertificateWithGemini(
 
     const ai = new GoogleGenAI({ apiKey: cleanKey });
 
-    const prompt = `수료증을 분석하여 JSON으로 추출하세요:
-assistantName, birthDate(YYMMDD), courseName, trainingHours(숫자+시간), institution, completionDate, certNumber, summary.`;
+    const prompt = `이 교육 수료증 이미지/문서에서 다음 4가지 항목을 정확히 추출하여 JSON으로 반환해주세요:
+1. assistantName: 수료자 성명 (이름)
+2. birthDate: 생년월일 (YYMMDD 또는 YYYY-MM-DD)
+3. courseName: 교육과정명 (예: 장애인활동지원사 보수교육, 이론교육, 직무교육 등)
+4. trainingHours: 교육 인정 시간 (숫자와 '시간' 표기, 예: "8시간")
+5. summary: 간단한 판독 요약 1문장`;
 
     // Robust list of models
     const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-flash-latest"];
@@ -108,9 +112,6 @@ assistantName, birthDate(YYMMDD), courseName, trainingHours(숫자+시간), inst
                   birthDate: { type: Type.STRING },
                   courseName: { type: Type.STRING },
                   trainingHours: { type: Type.STRING },
-                  institution: { type: Type.STRING },
-                  completionDate: { type: Type.STRING },
-                  certNumber: { type: Type.STRING },
                   summary: { type: Type.STRING },
                 },
                 required: ["courseName", "trainingHours"],
@@ -154,9 +155,6 @@ assistantName, birthDate(YYMMDD), courseName, trainingHours(숫자+시간), inst
         birthDate: parsed.birthDate?.trim() || "",
         courseName: parsed.courseName?.trim() || "장애인활동지원사 교육",
         trainingHours: parsed.trainingHours?.trim() || "8시간",
-        institution: parsed.institution?.trim() || "",
-        completionDate: parsed.completionDate?.trim() || "",
-        certNumber: parsed.certNumber?.trim() || "",
         summary: parsed.summary?.trim() || "AI 자동 판독 완료",
       };
     } catch (parseErr) {

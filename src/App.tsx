@@ -203,6 +203,7 @@ export default function App() {
         await addDoc(collection(db, "admins"), {
           name: name,
           password: pass,
+          apiKey: adminApiKeyInput.trim(),
           role: "admin",
           isBanned: false,
           createdAt: new Date().toISOString()
@@ -309,6 +310,11 @@ export default function App() {
       const storage = rememberMe ? localStorage : sessionStorage;
       storage.setItem("isAdminLoggedIn", "true");
       storage.setItem("adminUserName", name);
+      
+      if (userData.apiKey) {
+        localStorage.setItem("USER_GEMINI_API_KEY", userData.apiKey);
+        setGeminiApiKey(userData.apiKey);
+      }
       
       // Clear the other storage
       if (rememberMe) sessionStorage.removeItem("isAdminLoggedIn");
