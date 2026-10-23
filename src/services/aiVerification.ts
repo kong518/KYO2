@@ -70,106 +70,128 @@ export async function analyzeCertificateWithGemini(
 
     const ai = new GoogleGenAI({ apiKey: cleanKey });
 
-    const prompt = `이 교육 수료증 이미지/문서에서 다음 4가지 항목을 정확히 추출하여 JSON으로 반환해주세요:
+    const prompt = `이 교육 수료증 이미지/문서에서 다음 항목을 정확히 추출하여 JSON으로 반환해주세요:
 1. assistantName: 수료자 성명 (이름)
 2. birthDate: 생년월일 (YYMMDD 또는 YYYY-MM-DD)
-3. courseName: 교육과정명 (예: 장애인활동지원사 보수교육, 이론교육, 직무교육 등)
-4. trainingHours: 교육 인정 시간 (숫자와 '시간' 표기, 예: "8시간")
+3. courseName: 수료증에 기재된 정확한 교육과정명 (임의로 축약하거나 변경하지 말고 원문 그대로 추출)
+4. trainingHours: 수료증에 기재된 정확한 교육 이수 시간 (예: "8시간", "16시간" 등)
 5. summary: 간단한 판독 요약 1문장`;
 
-    // Robust list of models
-    const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-flash-latest"];
+    // Robust list of models with retry / backoff
+    const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest", "gemini-1.5-pro"];
     let response: any = null;
     let lastError: any = null;
 
     for (const modelName of modelsToTry) {
-      try {
-        response = await Promise.race([
-          ai.models.generateContent({
-            model: modelName,
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    inlineData: {
-                      mimeType,
-                      data: base64,
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          response = await Promise.race([
+            ai.models.generateContent({
+              model: modelName,
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    {
+                      inlineData: {
+                        mimeType,
+                        data: base64,
+                      },
                     },
-                  },
-                  {
-                    text: prompt,
-                  },
-                ],
-              },
-            ],
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  assistantName: { type: Type.STRING },
-                  birthDate: { type: Type.STRING },
-                  courseName: { type: Type.STRING },
-                  trainingHours: { type: Type.STRING },
-                  summary: { type: Type.STRING },
+                    {
+                      text: prompt,
+                    },
+                  ],
                 },
-                required: ["courseName", "trainingHours"],
+              ],
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    assistantName: { type: Type.STRING },
+                    birthDate: { type: Type.STRING },
+                    courseName: { type: Type.STRING },
+                    trainingHours: { type: Type.STRING },
+                    summary: { type: Type.STRING },
+                  },
+                  required: ["courseName", "trainingHours"],
+                },
               },
-            },
-          }),
-          timeout(30000)
-        ]);
+            }),
+            timeout(25000)
+          ]);
 
-        if (response && response.text) {
-          break;
-        }
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`[AI Verification] Model ${modelName} failed:`, err?.message || err);
-        
-        // If quota exceeded, don't bother trying other models
-        if (err.status === 429 || err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
-          throw new Error("Gemini API 사용량 한도(Quota)를 초과했습니다. 잠시 후 다시 시도해 주세요.");
-        }
+          if (response && response.text) {
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`[AI Verification] Model ${modelName} attempt ${attempt} failed (503/Quota/Error):`, err?.message || err);
+          
+          if (err.status === 429 || err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
+            return {
+              success: false,
+              error: "Gemini API 사용량 한도(Quota)를 초과했습니다. 잠시 후 다시 시도해 주세요.",
+            };
+          }
 
-        // If 503 or overloaded, wait briefly before trying the next model
-        if (err.status === 503 || err.message?.includes("503") || err.message?.includes("high demand") || err.message?.includes("UNAVAILABLE")) {
-          console.warn(`[AI Verification] Model ${modelName} overloaded. Waiting 2 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          // If 503 / UNAVAILABLE, wait briefly and retry
+          if (err.status === 503 || err.message?.includes("503") || err.message?.includes("high demand") || err.message?.includes("UNAVAILABLE")) {
+            await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
+          }
         }
+      }
+      if (response && response.text) {
+        break;
       }
     }
 
     if (!response || !response.text) {
-      throw lastError || new Error("AI 분석에 실패했습니다.");
+      return {
+        success: false,
+        error: lastError?.message?.includes("503") || lastError?.message?.includes("UNAVAILABLE")
+          ? "AI 모델이 일시적으로 높은 부하(503)를 받고 있습니다. 잠시 후 [AI 분석 재시도]를 눌러주세요."
+          : "수료증에서 교육명과 이수 시간을 추출하지 못했습니다. 직접 입력하시거나 [AI 분석 재시도]를 진행해 주세요.",
+      };
     }
 
     const text = response.text;
 
     try {
       const parsed = JSON.parse(text);
+      const courseName = parsed.courseName?.trim() || "";
+      const trainingHours = parsed.trainingHours?.trim() || "";
+
+      if (!courseName || !trainingHours) {
+        return {
+          success: false,
+          error: "수료증 이미지/PDF에서 교육명 또는 이수시간이 정확히 감지되지 않았습니다. 직접 입력해 주시거나 재시도 해주세요.",
+        };
+      }
+
       return {
         success: true,
         assistantName: parsed.assistantName?.trim() || "",
         birthDate: parsed.birthDate?.trim() || "",
-        courseName: parsed.courseName?.trim() || "장애인활동지원사 교육",
-        trainingHours: parsed.trainingHours?.trim() || "8시간",
-        summary: parsed.summary?.trim() || "AI 자동 판독 완료",
+        courseName,
+        trainingHours,
+        summary: parsed.summary?.trim() || "AI 정확 판독 완료",
       };
     } catch (parseErr) {
       return {
         success: false,
-        error: "AI 응답 형식이 올바르지 않습니다.",
+        error: "AI 응답 데이터 파싱에 실패했습니다. 다시 시도해 주세요.",
       };
     }
   } catch (err: any) {
     console.error("Gemini API certificate verification error:", err);
     let errorMsg = err.message || "수료증 분석 중 오류가 발생했습니다.";
     
-    // Check for common quota/rate limit errors
     if (errorMsg.includes("429") || errorMsg.includes("RESOURCE_EXHAUSTED") || errorMsg.includes("quota")) {
-      errorMsg = "API 사용량 한도(Quota)를 초과했습니다. Gemini API의 무료 티어 제한에 도달했거나 너무 많은 요청이 발생했습니다. 잠시 후(수 분 뒤) 다시 시도해 주세요.";
+      errorMsg = "API 사용량 한도(Quota)를 초과했습니다. 잠시 후 다시 시도해 주세요.";
+    } else if (errorMsg.includes("503") || errorMsg.includes("UNAVAILABLE") || errorMsg.includes("high demand")) {
+      errorMsg = "AI 모델이 일시적으로 과부하 상태입니다 (503). [AI 분석 재시도] 버튼을 눌러 다시 분석해 주세요.";
     }
 
     return {
@@ -178,3 +200,5 @@ export async function analyzeCertificateWithGemini(
     };
   }
 }
+
+
